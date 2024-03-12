@@ -1,0 +1,13 @@
+name: m2_cw
+channels:
+  - defaults
+dependencies:
+  - pre-commit
+  - matplotlib
+  - flake8
+  - sphinx
+  - black
+  - pytest
+  - numpy
+  - pandas
+  - scipy
