@@ -1,0 +1,30 @@
+# General Setup
+output_dir: "./run_output"
+wandb: true
+m2_cw: "YourProjectName"
+seed: 42
+
+# Experiment Control
+n_epoch: 10
+visualise_samples: "all"  # or [1, 5, 10]
+
+# Data Handling
+train_batch_size: 64
+val_batch_size: 64
+val_fraction: 0.1
+
+# Model Configuration
+decoder_model: "cnn"
+decoder_model_params:
+  in_channels: 1
+  expected_shape: [28, 28]
+  n_hidden: [16, 32, 32, 16]
+diffusion_model: "ddpm"
+beta_schedule: "linear"
+T: 1000
+custom_beta_schedule_params:
+  start: 0.0001
+  end: 0.02
+
+# Training Configuration
+lr: 1e-4
