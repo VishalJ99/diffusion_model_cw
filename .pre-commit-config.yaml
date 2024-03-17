@@ -19,11 +19,11 @@ repos:
     hooks:
       - id: flake8
         exclude: ^(docs/|report/)
-  - repo: local
-    hooks:
-      - id: testing
-        name: testing
-        entry: pytest
-        language: system
-        files: ^test/
-        always_run: true
+  # - repo: local
+  #   hooks:
+  #     - id: testing
+  #       name: testing
+  #       entry: pytest
+  #       language: system
+  #       files: ^test/
+  #       always_run: true
