@@ -1,8 +1,8 @@
-import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import torch
+from typing import Dict, Tuple
 import numpy as np
-from typing import Tuple, Optional, Callable
-
 class CNNBlock(nn.Module):
     def __init__(
         self,
@@ -14,12 +14,10 @@ class CNNBlock(nn.Module):
         kernel_size=7,
     ):
         super().__init__()
-        # Padding ensures that the spatial dimensions of the input
-        # are preserved after the convolution.
+
         self.net = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size,
-                      padding=kernel_size // 2),
-            nn.LayerNorm(expected_shape),
+            nn.Conv2d(in_channels, out_channels, kernel_size, padding=kernel_size // 2),
+            nn.LayerNorm((out_channels, *expected_shape)),
             act(),
         )
 
@@ -55,7 +53,7 @@ class CNN(nn.Module):
             last = hidden
 
         # The final layer, we use a regular Conv2d to get the
-        # correct scale and shape (and avoid applying the activation).
+        # correct scale and shape (and avoid applying the activation)
         self.blocks.append(
             nn.Conv2d(
                 last,
@@ -65,8 +63,8 @@ class CNN(nn.Module):
             )
         )
 
-        # This part is literally just to put the single scalar "t" into the CNN
-        # in a nice, high-dimensional way.
+        ## This part is literally just to put the single scalar "t" into the CNN
+        ## in a nice, high-dimensional way:
         self.time_embed = nn.Sequential(
             nn.Linear(time_embeddings * 2, 128),
             act(),
@@ -112,44 +110,53 @@ class CNN(nn.Module):
         return embed
 
 
+def ddpm_schedules(beta1: float, beta2: float, T: int) -> Dict[str, torch.Tensor]:
+    """Returns pre-computed schedules for DDPM sampling with a linear noise schedule."""
+    assert beta1 < beta2 < 1.0, "beta1 and beta2 must be in (0, 1)"
+
+    beta_t = (beta2 - beta1) * torch.arange(0, T + 1, dtype=torch.float32) / T + beta1
+    alpha_t = torch.exp(
+        torch.cumsum(torch.log(1 - beta_t), dim=0)
+    )  # Cumprod in log-space (better precision)
+
+    return {"beta_t": beta_t, "alpha_t": alpha_t}
+
+
 class DDPM(nn.Module):
     def __init__(
         self,
         decoder,
         beta_t,
-        alpha_t,
-        T,
         criterion: nn.Module = nn.MSELoss(),
     ) -> None:
         super().__init__()
-        # if beta_t, alpha_t and T are not tensors, convert them.
-        if not torch.is_tensor(beta_t):
-            beta_t = torch.tensor(beta_t)
-        if not torch.is_tensor(alpha_t):
-            alpha_t = torch.tensor(alpha_t)
-        if not torch.is_tensor(T):
-            T = torch.tensor(T)
+
+        alpha_t = torch.exp(
+            torch.cumsum(torch.log(1 - beta_t), dim=0)
+        )  # Cumprod in log-space (better precision)
 
         self.decoder = decoder
         self.register_buffer("beta_t", beta_t)
         self.register_buffer("alpha_t", alpha_t)
-        self.register_buffer("T", torch.tensor(T))
+        self.T = len(beta_t)
         self.criterion = criterion
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Algorithm 18.1 in Prince"""
-        # Uniformly draw batch size number of t's from 1 to n_T.
+        # Randomly draw t from 1 to T.
         t = torch.randint(1, self.T, (x.shape[0],), device=x.device)
         
-        # Draw noise from standard normal distribution.
-        eps = torch.randn_like(x)  
+        # Sample noise from standard normal distribution.
+        eps = torch.randn_like(x)  # eps ~ N(0, 1)
         
-        # Calculate z_t from x and eps.
-        alpha_t = self.alpha_t[t, None, None, None]  # for broadcasting reasons
+        # Calculate latent variable z_t from x and eps.
+        alpha_t = self.alpha_t[t, None, None, None]  # Get right shape for broadcasting.
         z_t = torch.sqrt(alpha_t) * x + torch.sqrt(1 - alpha_t) * eps
         
-        # Predict the noise term from this z_t.
+        # Estimate the noise using the decoder.
         eps_hat = self.decoder(z_t, t / self.T)
+        
+        # Return the loss (cant compute it outside as need eps).
         return self.criterion(eps, eps_hat)
 
     def sample(self, n_sample: int, size, device) -> torch.Tensor:
@@ -163,12 +170,14 @@ class DDPM(nn.Module):
 
             # First line of loop:
             z_t -= (beta_t / torch.sqrt(1 - alpha_t)) * self.decoder(
-                z_t, (i / self.n_T) * _one
+                z_t, (i / self.T) * _one
             )
             z_t /= torch.sqrt(1 - beta_t)
 
-            # Add noise for all steps except the final step.
             if i > 1:
+                # Last line of loop:
                 z_t += torch.sqrt(beta_t) * torch.randn_like(z_t)
+            # (We don't add noise at the final step - i.e., the last line of the algorithm)
 
         return z_t
+    

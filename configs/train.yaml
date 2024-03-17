@@ -1,17 +1,18 @@
 # General Setup
-output_dir: "./run_output"
+output_dir: "./runs/refactor_3"
 wandb: true
 m2_cw: "YourProjectName"
 seed: 42
+quick_test: false # Runs training with only 1 batch.
 
 # Experiment Control
-n_epoch: 10
+n_epoch: 100
 visualise_samples: "all"  # or [1, 5, 10]
 
 # Data Handling
-train_batch_size: 64
-val_batch_size: 64
-val_fraction: 0.1
+train_batch_size: 128
+val_batch_size: 512
+val_fraction: 0.2
 
 # Model Configuration
 decoder_model: "cnn"
@@ -23,8 +24,8 @@ diffusion_model: "ddpm"
 beta_schedule: "linear"
 T: 1000
 custom_beta_schedule_params:
-  start: 0.0001
-  end: 0.02
+  beta_1: 0.0001
+  beta_2: 0.02
 
 # Training Configuration
-lr: 1e-4
+lr: 0.0002
