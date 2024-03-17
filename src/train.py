@@ -1,17 +1,20 @@
 import argparse
 import os
-from utils import seed_everything, fetch_model, fetch_beta_schedule
+from utils import (
+    seed_everything,
+    fetch_model,
+    fetch_beta_schedule,
+    make_cond_samples_plot,
+)
 import torch
 import sys
 import torchvision.transforms as transforms
 from torchvision.datasets import MNIST
-from models import CNN, DDPM
 from accelerate import Accelerator
 from tqdm import tqdm
 from torchvision.utils import save_image, make_grid
 import csv
 import yaml
-import torch.nn as nn
 import numpy as np
 import wandb
 
@@ -30,10 +33,7 @@ def main(config):
         os.makedirs(cond_samples_dir_path)
 
     except OSError:
-        print(
-            f"Directory already exists in {config['output_dir']}..."
-            " Exiting."
-        )
+        print(f"Directory already exists in {config['output_dir']}..." " Exiting.")
         sys.exit(1)
 
     if os.path.exists(".git"):
@@ -58,13 +58,17 @@ def main(config):
     # Set the random seed for reproducibility.
     seed_everything(config["seed"])
 
+    # Set the device to use for training. GPU -> MPS -> CPU.
+    accelerator = Accelerator()
+    device = accelerator.device
+    print(f"[INFO] Device set to: {device}")
+
     pre_transforms = transforms.Compose(
         [transforms.ToTensor(), transforms.Normalize((0.5,), (1.0))]
     )
 
     # Load the dataset.
-    dataset = MNIST("./data", train=True, download=True,
-                    transform=pre_transforms)
+    dataset = MNIST("./data", train=True, download=True, transform=pre_transforms)
 
     # Split the dataset into train and validation sets.
     val_fraction = config["val_fraction"]
@@ -103,23 +107,18 @@ def main(config):
 
     # Initialise the models.
     decoder = decoder_model_class(**config["decoder_model_params"])
-    model = diffusion_model_class(decoder, beta_t)
+    model = diffusion_model_class(decoder, beta_t, device)
     optim = torch.optim.Adam(model.parameters(), lr=2e-4)
 
-    # Set the device to use for training. GPU -> MPS -> CPU.
-    accelerator = Accelerator()
-    device = accelerator.device
-    print(f"[INFO] Device set to: {device}")
-
-   # Lets HuggingFace's Accelerate handle the device placement and gradient accumulation.
-    model, optim, train_loader, val_loader = accelerator.prepare(model,
-                                                                optim,
-                                                                train_loader,
-                                                                val_loader)
+    # Lets HuggingFace's Accelerate handle the device placement
+    # and gradient accumulation.
+    model, optim, train_loader, val_loader = accelerator.prepare(
+        model, optim, train_loader, val_loader
+    )
     n_epoch = config["n_epoch"]
 
-    # Visualise samples at these epochs.
-    # visualise_samples = [i in range(n_epoch)] if config["visualise_samples"] == 'all' else config["visualise_samples"]
+    visualise_ts = config["visualise_ts"]
+
     best_model_weights_fname = "best_model.pth"
     best_model_weights_fpath = os.path.join(
         output_dir, "model_weights", best_model_weights_fname
@@ -127,13 +126,13 @@ def main(config):
     all_train_losses = []
     lowest_val_loss = np.inf
     # Open the CSV file and prepare to write losses.
-    loss_csv_path = os.path.join(output_dir, 'losses.csv')
-    with open(loss_csv_path, mode='w', newline='') as file:
+    loss_csv_path = os.path.join(output_dir, "losses.csv")
+    with open(loss_csv_path, mode="w", newline="") as file:
         writer = csv.writer(file)
         # Write the header row
-        writer.writerow(['epoch', 'avg_training_loss', 'avg_validation_loss'])
+        writer.writerow(["epoch", "avg_training_loss", "avg_validation_loss"])
 
-    for i in range(1, n_epoch+1):
+    for i in range(1, n_epoch + 1):
         # Training loop.
         model.train()
         total_train_loss = 0
@@ -170,25 +169,33 @@ def main(config):
             average_val_loss = total_val_loss / len(val_loader)
             print(f"Epoch {i} - average val loss: {average_val_loss}")
 
+            # Generate conditional samples.
+            z_t = model.cond_sample(x[:4], visualise_ts, device="mps:0")
+            plt = make_cond_samples_plot(z_t, visualise_ts, 4)
+            plt.savefig(
+                os.path.join(cond_samples_dir_path, f"cond_sample_{i:04d}.png"), dpi=300
+            )
+
             # Generate and save samples unconditionally.
-            xh = model.sample(16, (1, 28, 28), accelerator.device) 
+            xh = model.uncond_sample(16, (1, 28, 28), accelerator.device)
             grid = make_grid(xh, nrow=4)
-            image_path = os.path.join(uncond_samples_dir_path, f"ddpm_sample_{i:04d}.png")
+            image_path = os.path.join(
+                uncond_samples_dir_path, f"ddpm_sample_{i:04d}.png"
+            )
             save_image(grid, image_path)
 
         if average_val_loss < lowest_val_loss:
             # Save model weights.
             print(
-                f"[INFO] Validation loss improved from {lowest_val_loss:.4f} to {average_val_loss:.4f}"
+                f"[INFO] Validation loss improved from {lowest_val_loss:.4f}"
+                f" to {average_val_loss:.4f}"
             )
             print("[INFO] Saving model weights")
-            torch.save(
-                model.state_dict(), best_model_weights_fpath
-            )
+            torch.save(model.state_dict(), best_model_weights_fpath)
             lowest_val_loss = average_val_loss
 
         # Save train and validation loss to output_dir
-        with open(loss_csv_path, mode='a', newline='') as file:
+        with open(loss_csv_path, mode="a", newline="") as file:
             writer = csv.writer(file)
             writer.writerow([i, avg_train_loss, average_val_loss])
 
@@ -197,9 +204,7 @@ def main(config):
         model_weights_fpath = os.path.join(
             output_dir, "model_weights", model_weights_fname
         )
-        torch.save(
-            model.state_dict(), model_weights_fpath
-        )
+        torch.save(model.state_dict(), model_weights_fpath)
 
 
 if __name__ == "__main__":
