@@ -63,7 +63,7 @@ def linear_beta_schedule(T, beta_1, beta_2):
     return beta_t
 
 
-def make_cond_samples_plot(z_t, visualise_ts, nrows, fs=8):
+def make_cond_samples_plot(z_t, visualise_ts, nrows, fs=12):
     # Normalise every image in the batch.
     for idx, img in enumerate(z_t):
         z_t[idx] = (img - img.min()) / (img.max() - img.min())
@@ -72,52 +72,57 @@ def make_cond_samples_plot(z_t, visualise_ts, nrows, fs=8):
     grid = make_grid(z_t, nrow=nrows)
 
     # Plot the grid.
-    plt.imshow(grid.permute(1, 2, 0).cpu().numpy(), cmap="gray")
-    plt.axis("off")
+    fig, ax = plt.subplots(figsize=(12, 12))  # Adjust size as needed
+    ax.imshow(grid.cpu().numpy().transpose(1, 2, 0), cmap="gray", vmin=0, vmax=1)
+    ax.axis("off")
+
     # Draw the variable names on the left hand border of the image.
     image_height = z_t.shape[2]
     pad = 2
     vpad = image_height // 2
 
-    plt.text(
-        -fs,
-        0 * (image_height + pad) + vpad,
-        "$x$",
-        ha="right",
-        va="center",
-        fontsize=fs,
-    )
-
-    for i, t in enumerate(visualise_ts, start=1):
-        plt.text(
+    # Adding text annotations
+    for i, t in enumerate([0] + visualise_ts + visualise_ts[::-1] + [0], start=0):
+        y_pos = i * (image_height + pad) + vpad
+        if i == 0:
+            label = "$x$"
+        elif i <= len(visualise_ts):
+            label = f"$z_{{{t}}}$"
+        else:
+            label = f"$\hat{{x}}_{{{t}}}$"
+        ax.text(
             -fs,
-            i * (image_height + pad) + vpad,
-            f"$z_{{{t}}}$",
+            y_pos,
+            label,
             ha="right",
             va="center",
             fontsize=fs,
+            transform=ax.transData,
         )
 
-    visualise_ts = visualise_ts[::-1]
-
-    for i, t in enumerate(visualise_ts, start=len(visualise_ts) + 1):
-        plt.text(
-            -fs,
-            i * (image_height + pad) + vpad,
-            f"$z_{{{t}}}$",
-            ha="right",
-            va="center",
-            fontsize=fs,
-        )
-
-    i = 2 * len(visualise_ts) + 1
-    plt.text(
-        -fs,
-        i * (image_height + pad) + vpad,
-        "$z_0$",
+    # Draw curly braces and add labels for "Degradation" and "Restoration"
+    # Note: This requires manual adjustment for positioning
+    degradation_label_pos_y = (len(visualise_ts) / 2) * (image_height + pad) + vpad
+    restoration_label_pos_y = ((len(visualise_ts) * 2) / 2) * (image_height + pad) * 2
+    ax.text(
+        -fs * 2,
+        degradation_label_pos_y,
+        "Degradation",
         ha="right",
         va="center",
-        fontsize=fs,
+        fontsize=fs + 2,
+        rotation=90,
+        transform=ax.transData,
     )
-
+    ax.text(
+        -fs * 2,
+        restoration_label_pos_y,
+        "Restoration",
+        ha="right",
+        va="center",
+        fontsize=fs + 2,
+        rotation=90,
+        transform=ax.transData,
+    )
+    plt.tight_layout()
     return plt
