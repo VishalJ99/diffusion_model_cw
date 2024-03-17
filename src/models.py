@@ -1,8 +1,8 @@
 import torch.nn as nn
-import torch.nn.functional as F
 import torch
-from typing import Dict, Tuple
 import numpy as np
+
+
 class CNNBlock(nn.Module):
     def __init__(
         self,
@@ -16,7 +16,10 @@ class CNNBlock(nn.Module):
         super().__init__()
 
         self.net = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size, padding=kernel_size // 2),
+            nn.Conv2d(in_channels,
+                      out_channels,
+                      kernel_size,
+                      padding=kernel_size // 2),
             nn.LayerNorm((out_channels, *expected_shape)),
             act(),
         )
@@ -63,8 +66,6 @@ class CNN(nn.Module):
             )
         )
 
-        ## This part is literally just to put the single scalar "t" into the CNN
-        ## in a nice, high-dimensional way:
         self.time_embed = nn.Sequential(
             nn.Linear(time_embeddings * 2, 128),
             act(),
@@ -110,74 +111,127 @@ class CNN(nn.Module):
         return embed
 
 
-def ddpm_schedules(beta1: float, beta2: float, T: int) -> Dict[str, torch.Tensor]:
-    """Returns pre-computed schedules for DDPM sampling with a linear noise schedule."""
-    assert beta1 < beta2 < 1.0, "beta1 and beta2 must be in (0, 1)"
-
-    beta_t = (beta2 - beta1) * torch.arange(0, T + 1, dtype=torch.float32) / T + beta1
-    alpha_t = torch.exp(
-        torch.cumsum(torch.log(1 - beta_t), dim=0)
-    )  # Cumprod in log-space (better precision)
-
-    return {"beta_t": beta_t, "alpha_t": alpha_t}
-
-
 class DDPM(nn.Module):
     def __init__(
         self,
         decoder,
         beta_t,
+        device,
         criterion: nn.Module = nn.MSELoss(),
     ) -> None:
         super().__init__()
-
-        alpha_t = torch.exp(
-            torch.cumsum(torch.log(1 - beta_t), dim=0)
+        self.T = len(beta_t)
+        self.device = device
+        self.decoder = decoder
+        self.criterion = criterion
+        """
+        TODO: Define abstract class, standardise type of t for degradation
+        and generation, currently t for degrade is a vector, t for generate
+        is a scalar.
+        """
+        # Calculate alpha_t from beta_t.
+        alpha_t = np.exp(
+            np.cumsum(np.log(1 - beta_t))
         )  # Cumprod in log-space (better precision)
 
-        self.decoder = decoder
+        # Insert 0 at the beginning of beta_t and alpha_t to make the indexing
+        # more intuitive. This way, beta_t[t] is the value of beta at time t.
+        beta_t = np.insert(beta_t, 0, torch.tensor(0.0))
+        alpha_t = np.insert(alpha_t, 0, torch.tensor(0.0))
+
+        # Convert to tensors and register as buffers.
+        beta_t = torch.tensor(beta_t, device=device)
+        alpha_t = torch.tensor(alpha_t, device=device)
+
         self.register_buffer("beta_t", beta_t)
         self.register_buffer("alpha_t", alpha_t)
-        self.T = len(beta_t)
-        self.criterion = criterion
+
+    def degrade(self, x, t):
+        # Degradation step.
+        eps = torch.randn_like(x)  # eps ~ N(0, 1)
+        alpha_t = self.alpha_t[t, None, None, None]  # Get right shape for broadcasting.
+        z_t = torch.sqrt(alpha_t) * x + torch.sqrt(1 - alpha_t) * eps
+        return z_t, eps
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Algorithm 18.1 in Prince"""
-        # Randomly draw t from 1 to T.
+        # Draw t uniformly from 1 to T.
         t = torch.randint(1, self.T, (x.shape[0],), device=x.device)
-        
-        # Sample noise from standard normal distribution.
-        eps = torch.randn_like(x)  # eps ~ N(0, 1)
-        
-        # Calculate latent variable z_t from x and eps.
-        alpha_t = self.alpha_t[t, None, None, None]  # Get right shape for broadcasting.
-        z_t = torch.sqrt(alpha_t) * x + torch.sqrt(1 - alpha_t) * eps
-        
+
+        # Calculate the latent variable z_t from x and eps.
+        z_t, eps = self.degrade(x, t)
+
         # Estimate the noise using the decoder.
         eps_hat = self.decoder(z_t, t / self.T)
-        
-        # Return the loss (cant compute it outside as need eps).
+
+        # Return the loss.
         return self.criterion(eps, eps_hat)
 
-    def sample(self, n_sample: int, size, device) -> torch.Tensor:
-        """Algorithm 18.2 in Prince"""
+    def generate(self, z_t, t):
+        # For broadcasting of scalar time. TODO: either make t a vector or
+        # add same broadcasting for degrade.
+        _one = torch.ones(z_t.shape[0], device=self.device)
+        for t in range(self.T, t, -1):
+            alpha_t = self.alpha_t[t]
+            beta_t = self.beta_t[t]
 
-        _one = torch.ones(n_sample, device=device)
-        z_t = torch.randn(n_sample, *size, device=device)
-        for i in range(self.T-1, 0, -1):
-            alpha_t = self.alpha_t[i]
-            beta_t = self.beta_t[i]
-
-            # First line of loop:
             z_t -= (beta_t / torch.sqrt(1 - alpha_t)) * self.decoder(
-                z_t, (i / self.T) * _one
+                z_t, (t / self.T) * _one
             )
             z_t /= torch.sqrt(1 - beta_t)
 
-            if i > 1:
-                # Last line of loop:
+            if t > 1:
                 z_t += torch.sqrt(beta_t) * torch.randn_like(z_t)
-            # (We don't add noise at the final step - i.e., the last line of the algorithm)
 
         return z_t
-    
+
+    def uncond_sample(self, n_sample: int, size, device) -> torch.Tensor:
+        """Algorithm 18.2 in Prince"""
+        z_t = torch.randn(n_sample, *size, device=device)
+        x_t = self.generate(z_t, 0)
+        return x_t
+
+    def cond_sample(self, x, visualise_ts, device):
+        # Check visualise t is in ascending order.
+        assert all(
+            visualise_ts[i] < visualise_ts[i + 1]
+            for i in range(len(visualise_ts) - 1)
+        )
+        visualise_ts = torch.tensor(visualise_ts, device=device)
+
+        # Reshape for broadcasting purposes.
+        visualise_ts = visualise_ts.repeat(x.shape[0], 1).mT
+
+        # Create a tensor to store the samples.
+        samples = torch.zeros(
+            2 * (len(visualise_ts) + 1) * x.shape[0], *x.shape[1:],
+            device=x.device
+        )
+
+        # Add the original image.
+        samples[: x.shape[0]] = x
+
+        # Forward degradation.
+        for idx, t in enumerate(visualise_ts, start=1):
+            z_t, _ = self.degrade(x, t)
+            samples[idx * x.shape[0]: (idx + 1) * x.shape[0]] = z_t
+
+        # Backward reconstruction.
+        visualise_ts = torch.flip(
+            visualise_ts,
+            [
+                0,
+            ],
+        )
+        for idx, t in enumerate(visualise_ts, start=len(visualise_ts) + 1):
+            z_t, _ = self.degrade(x, self.T)
+            time = t[0]
+            x_t = self.generate(z_t, time)
+            samples[(idx) * x.shape[0]: (idx + 1) * x.shape[0]] = x_t
+
+        # Last sample is the fully reconstructed image.
+        z_t, _ = self.degrade(x, self.T)
+        x_t = self.generate(z_t, 0)
+        samples[-x.shape[0]:] = x_t
+
+        return samples
