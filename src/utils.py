@@ -47,13 +47,13 @@ def fetch_beta_schedule(schedule_key):
     return fetch_beta_schedule_dict[schedule_key]
 
 
-def linear_beta_schedule(T, beta1, beta2):
+def linear_beta_schedule(T, beta_1, beta_2):
     # NOTE: T must be the first argument for it to be initialised properly
     # in the train.py script.
     """Returns pre-computed schedules for DDPM sampling with a linear noise schedule."""
-    assert beta1 < beta2 < 1.0, "beta1 and beta2 must be in (0, 1)"
+    assert beta_1 < beta_2 < 1.0, "beta1 and beta2 must be in (0, 1)"
 
-    beta_t = (beta2 - beta1) * torch.arange(0, T, dtype=torch.float32) \
-        / (T - 1) + beta1
+    beta_t = (beta_2 - beta_1) * torch.arange(0, T, dtype=torch.float32) \
+        / (T - 1) + beta_1
 
     return beta_t

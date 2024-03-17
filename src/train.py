@@ -1,21 +1,20 @@
 import argparse
 import os
-import sys
-from utils import (
-    seed_everything,
-    fetch_model,
-    fetch_beta_schedule,
-)
-import wandb
+from utils import seed_everything, fetch_model, fetch_beta_schedule
 import torch
+import sys
+import torchvision.transforms as transforms
 from torchvision.datasets import MNIST
-from torchvision import transforms
+from models import CNN, DDPM
 from accelerate import Accelerator
-import tqdm
-import numpy as np
+from tqdm import tqdm
 from torchvision.utils import save_image, make_grid
-import json
+import csv
 import yaml
+import torch.nn as nn
+import numpy as np
+import wandb
+
 
 def main(config):
     # Create the output directory for the run if it does not exist.
@@ -32,8 +31,8 @@ def main(config):
 
     except OSError:
         print(
-            f"Directory already exists in {config['output_dir']} already exists.\
-              Exiting."
+            f"Directory already exists in {config['output_dir']}..."
+            " Exiting."
         )
         sys.exit(1)
 
@@ -44,7 +43,7 @@ def main(config):
     # Save the config to the output directory for reproducibility.
     config_file = os.path.join(output_dir, "config.yaml")
     with open(config_file, "w") as f:
-        json.dump(config, f)
+        yaml.dump(config, f)
 
     if config["wandb"]:
         # Use wandb to log the run.
@@ -59,14 +58,6 @@ def main(config):
     # Set the random seed for reproducibility.
     seed_everything(config["seed"])
 
-    # Set the device to use for training. GPU -> MPS -> CPU.
-    accelerator = Accelerator()
-    device = accelerator.device
-    print(f"[INFO] Device set to: {device}")
-
-    # Define the pre transforms.
-    # TODO: Make specifiable from config. Seperate into train and val if random
-    # transformations are used. May require defining a custom dataset class.
     pre_transforms = transforms.Compose(
         [transforms.ToTensor(), transforms.Normalize((0.5,), (1.0))]
     )
@@ -81,6 +72,14 @@ def main(config):
         dataset, [1 - val_fraction, val_fraction]
     )
 
+    if config["quick_test"]:
+        # Create smaller subsets of the datasets for quick testing.
+        train_indices = list(range(config["train_batch_size"]))
+        val_indices = list(range(config["val_batch_size"]))
+
+        train_set = torch.utils.data.Subset(train_set, train_indices)
+        val_set = torch.utils.data.Subset(val_set, val_indices)
+
     # Initialise the dataloaders.
     train_loader = torch.utils.data.DataLoader(
         train_set, batch_size=config["train_batch_size"], shuffle=True
@@ -92,8 +91,6 @@ def main(config):
         shuffle=False,
     )
 
-    # Fetch the decoder model. TODO: avoid hard coding the activation in
-    # the decoder model class def. Make loadable from config.
     decoder_model_class = fetch_model(config["decoder_model"])
     diffusion_model_class = fetch_model(config["diffusion_model"])
 
@@ -101,31 +98,42 @@ def main(config):
     beta_schedule = fetch_beta_schedule(config["beta_schedule"])
     T = config["T"]
     beta_t = beta_schedule(T, **config["custom_beta_schedule_params"])
-    alpha_t = torch.exp(
-        torch.cumsum(torch.log(1 - beta_t), dim=0)
-    )  # Cumprod in log-space (better precision)
 
     assert len(beta_t) == T, "Beta schedule must have T elements."
-    assert len(alpha_t) == T, "Alpha schedule must have T elements."
 
     # Initialise the models.
     decoder = decoder_model_class(**config["decoder_model_params"])
-    model = diffusion_model_class(decoder, beta_t, alpha_t, T)
+    model = diffusion_model_class(decoder, beta_t)
+    optim = torch.optim.Adam(model.parameters(), lr=2e-4)
 
-    # Initialise optimiser.
-    optim = torch.optim.Adam(model.parameters(), lr=config["lr"])
+    # Set the device to use for training. GPU -> MPS -> CPU.
+    accelerator = Accelerator()
+    device = accelerator.device
+    print(f"[INFO] Device set to: {device}")
 
-    # Lets HuggingFace's Accelerate handle the device placement and gradient accumulation.
-    ddpm, optim, dataloader = accelerator.prepare(model, optim, train_loader)
-    
+   # Lets HuggingFace's Accelerate handle the device placement and gradient accumulation.
+    model, optim, train_loader, val_loader = accelerator.prepare(model,
+                                                                optim,
+                                                                train_loader,
+                                                                val_loader)
     n_epoch = config["n_epoch"]
 
     # Visualise samples at these epochs.
     # visualise_samples = [i in range(n_epoch)] if config["visualise_samples"] == 'all' else config["visualise_samples"]
-
+    best_model_weights_fname = "best_model.pth"
+    best_model_weights_fpath = os.path.join(
+        output_dir, "model_weights", best_model_weights_fname
+    )
     all_train_losses = []
     lowest_val_loss = np.inf
-    for i in range(n_epoch):
+    # Open the CSV file and prepare to write losses.
+    loss_csv_path = os.path.join(output_dir, 'losses.csv')
+    with open(loss_csv_path, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        # Write the header row
+        writer.writerow(['epoch', 'avg_training_loss', 'avg_validation_loss'])
+
+    for i in range(1, n_epoch+1):
         # Training loop.
         model.train()
         total_train_loss = 0
@@ -148,53 +156,43 @@ def main(config):
             train_pbar.set_description(f"loss: {running_avg_loss:.3g}")
 
         avg_train_loss = total_train_loss / len(train_loader)
-        print(f"Epoch {i} - average loss: {avg_train_loss}")
+        print(f"Epoch {i} - average loss: {avg_train_loss:.5g}")
 
-        model.eval()
         with torch.no_grad():
             # Validation loop.
             model.eval()
             total_val_loss = 0
             for x, _ in val_loader:
                 loss = model(x)
-
                 wandb.log({"val_loss": loss.item()})
                 total_val_loss += loss.item()
 
             average_val_loss = total_val_loss / len(val_loader)
             print(f"Epoch {i} - average val loss: {average_val_loss}")
 
+            # Generate and save samples unconditionally.
+            xh = model.sample(16, (1, 28, 28), accelerator.device) 
+            grid = make_grid(xh, nrow=4)
+            image_path = os.path.join(uncond_samples_dir_path, f"ddpm_sample_{i:04d}.png")
+            save_image(grid, image_path)
+
         if average_val_loss < lowest_val_loss:
             # Save model weights.
-            model_weights_fname = "best_model.pth"
-            model_weights_fpath = os.path.join(
-                output_dir, "model_weights", model_weights_fname
-            )
             print(
                 f"[INFO] Validation loss improved from {lowest_val_loss:.4f} to {average_val_loss:.4f}"
             )
             print("[INFO] Saving model weights")
+            torch.save(
+                model.state_dict(), best_model_weights_fpath
+            )
             lowest_val_loss = average_val_loss
 
         # Save train and validation loss to output_dir
-    
-        # TODO: Figure out sampling and metrics.
-        # Unconditional generation of samples.
-        # if i in visualise_samples:
-            # x_uncond = model.unconditional_sample(16, (1, 28, 28), device)
-            # x_cond = model.conditional_sample(4, (1, 28, 28), device)
+        with open(loss_csv_path, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([i, avg_train_loss, average_val_loss])
 
-            # grid = make_grid(x_uncond, nrow=4)
-            # sample_images_fname = f"epoch_{i}.png"
-            # unconditional_sample_images_fpath = os.path.join(
-                # output_dir, "samples", "unconditional", unconditional_sample_images_fname
-            # )
-            # unconditional_sample_images_fpath = os.path.join(
-            #     output_dir, "samples", "unconditional", unconditional_sample_images_fname
-            # )
-            # save_image(grid, f"./contents/ddpm_sample_{i:04d}.png")
-
-        # save model.
+        # Save model weights.
         model_weights_fname = f"epoch_{i}_model.pth"
         model_weights_fpath = os.path.join(
             output_dir, "model_weights", model_weights_fname
