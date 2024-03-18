@@ -5,6 +5,11 @@ import os
 from models import CNN, DDPM
 import matplotlib.pyplot as plt
 from torchvision.utils import make_grid
+from noise_schedules import (
+    const_noise_schedule,
+    linear_noise_schedule,
+    cosine_noise_schedule,
+)
 
 
 def seed_everything(seed):
@@ -52,67 +57,6 @@ def fetch_noise_schedule(schedule_key):
         "cosine": cosine_noise_schedule,
     }
     return noise_schedule_dict[schedule_key]
-
-
-def linear_noise_schedule(T, beta_1, beta_2):
-    # NOTE: T must be the first argument for it to be initialised properly
-    # in the train.py script.
-    """Returns pre-computed schedules for DDPM sampling
-    with a linear noise schedule."""
-    assert beta_1 < beta_2 < 1.0, "beta1 and beta2 must be in (0, 1)"
-
-    # Calculate beta_t from t.
-    beta_t = (beta_2 - beta_1) * np.arange(0, T, dtype=np.float32)
-    beta_t /= T - 1
-    beta_t += beta_1
-
-    # Calculate alpha_t from beta_t.
-    alpha_t = np.exp(
-        np.cumsum(np.log(1 - beta_t))
-    )  # Cumprod in log-space (better precision).
-
-    # Insert value for t=0 at the beginning of beta_t and alpha_t to make the indexing
-    # more intuitive. This way, beta_t[t] is the value of beta at time t.
-    beta_t = np.insert(beta_t, 0, 0)
-    alpha_t = np.insert(alpha_t, 0, 1)
-
-    return beta_t, alpha_t
-
-
-def cosine_noise_schedule(T, beta_max=0.1, s=0.008):
-    # NOTE: T must be the first argument for it to be initialised properly
-    # in the train.py script.
-    # https://arxiv.org/abs/2102.09672
-
-    def f(t, s):
-        freq = ((t / T) + s) / (4 * (1 + s))
-        return np.cos(2 * np.pi * freq) ** 2
-
-    alpha_t = [f(t, s) / f(0, s) for t in range(T + 1)]
-    beta_t = [1 - (alpha_t[t] / alpha_t[t - 1]) for t in range(1, T + 1)]
-
-    # Insert value for t=0 at the beginning of beta_t to make the indexing
-    # more intuitive. This way, beta_t[t] is the value of beta at time t.
-    beta_t = np.insert(beta_t, 0, 0).astype(np.float32)
-    alpha_t = np.asarray(alpha_t).astype(np.float32)
-
-    # Clip beta_t vals greater than beta_max since beta explodes at the end.
-    beta_t = np.clip(beta_t, 0.0, beta_max)
-
-    return beta_t, alpha_t
-
-
-def const_noise_schedule(T, beta):
-    # NOTE: T must be the first argument for it to be initialised properly
-    # in the train.py script.
-    """Returns pre-computed schedules for DDPM sampling
-    with a constant noise schedule."""
-    beta_t = np.full(T + 1, beta, dtype=np.float32)
-    alpha_t = np.exp(
-        np.cumsum(np.log(1 - beta_t))
-    )  # Cumprod in log-space (better precision)
-
-    return beta_t, alpha_t
 
 
 def make_cond_samples_plot(z_t, visualise_ts, nrows, fs=12):
@@ -178,3 +122,8 @@ def make_cond_samples_plot(z_t, visualise_ts, nrows, fs=12):
     )
     plt.tight_layout()
     return plt
+
+
+def stable_cumprod(x):
+    # Cumprod in log-space (better precision).
+    return np.exp(np.cumsum(np.log(x)))
