@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch
 import numpy as np
+from icecream import ic
 
 
 class CNNBlock(nn.Module):
@@ -16,10 +17,7 @@ class CNNBlock(nn.Module):
         super().__init__()
 
         self.net = nn.Sequential(
-            nn.Conv2d(in_channels,
-                      out_channels,
-                      kernel_size,
-                      padding=kernel_size // 2),
+            nn.Conv2d(in_channels, out_channels, kernel_size, padding=kernel_size // 2),
             nn.LayerNorm((out_channels, *expected_shape)),
             act(),
         )
@@ -167,11 +165,16 @@ class DDPM(nn.Module):
         # Return the loss.
         return self.criterion(eps, eps_hat)
 
-    def generate(self, z_t, t):
+    def generate(self, z_t, end_t, start_t=None):
         # For broadcasting of scalar time. TODO: either make t a vector or
         # add same broadcasting for degrade.
         _one = torch.ones(z_t.shape[0], device=self.device)
-        for t in range(self.T, t, -1):
+        if start_t:
+            assert start_t <= self.T
+        else:
+            start_t = self.T
+
+        for t in range(start_t, end_t, -1):
             alpha_t = self.alpha_t[t]
             beta_t = self.beta_t[t]
 
@@ -194,8 +197,7 @@ class DDPM(nn.Module):
     def cond_sample(self, x, visualise_ts, device):
         # Check visualise t is in ascending order.
         assert all(
-            visualise_ts[i] < visualise_ts[i + 1]
-            for i in range(len(visualise_ts) - 1)
+            visualise_ts[i] < visualise_ts[i + 1] for i in range(len(visualise_ts) - 1)
         )
         visualise_ts = torch.tensor(visualise_ts, device=device)
 
@@ -204,8 +206,7 @@ class DDPM(nn.Module):
 
         # Create a tensor to store the samples.
         samples = torch.zeros(
-            2 * (len(visualise_ts) + 1) * x.shape[0], *x.shape[1:],
-            device=x.device
+            2 * (len(visualise_ts) + 1) * x.shape[0], *x.shape[1:], device=x.device
         )
 
         # Add the original image.
@@ -214,7 +215,7 @@ class DDPM(nn.Module):
         # Forward degradation.
         for idx, t in enumerate(visualise_ts, start=1):
             z_t, _ = self.degrade(x, t)
-            samples[idx * x.shape[0]: (idx + 1) * x.shape[0]] = z_t
+            samples[idx * x.shape[0] : (idx + 1) * x.shape[0]] = z_t
 
         # Backward reconstruction.
         visualise_ts = torch.flip(
@@ -223,15 +224,21 @@ class DDPM(nn.Module):
                 0,
             ],
         )
+
+        # Start with fully degraded image.
+        z_t, _ = self.degrade(x, self.T)
+        prev_t = self.T
+
+        # Generate iteratively and store the samples at the relevant indices.
         for idx, t in enumerate(visualise_ts, start=len(visualise_ts) + 1):
-            z_t, _ = self.degrade(x, self.T)
-            time = t[0]
-            x_t = self.generate(z_t, time)
-            samples[(idx) * x.shape[0]: (idx + 1) * x.shape[0]] = x_t
+            t_scalar = t[0]
+            ic(t_scalar, prev_t)
+            z_t = self.generate(z_t, t_scalar, start_t=prev_t)
+            samples[(idx) * x.shape[0] : (idx + 1) * x.shape[0]] = z_t
+            prev_t = t_scalar
 
         # Last sample is the fully reconstructed image.
-        z_t, _ = self.degrade(x, self.T)
-        x_t = self.generate(z_t, 0)
-        samples[-x.shape[0]:] = x_t
+        z_t = self.generate(z_t, 0, start_t=prev_t)
+        samples[-x.shape[0] :] = z_t
 
         return samples
