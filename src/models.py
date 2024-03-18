@@ -1,7 +1,6 @@
 import torch.nn as nn
 import torch
 import numpy as np
-from icecream import ic
 
 
 class CNNBlock(nn.Module):
@@ -114,11 +113,14 @@ class DDPM(nn.Module):
         self,
         decoder,
         beta_t,
+        alpha_t,
         device,
         criterion: nn.Module = nn.MSELoss(),
     ) -> None:
         super().__init__()
-        self.T = len(beta_t)
+        # beta_t has T + 1 elements, where T is the number of steps.
+        # Allows for convenient indexing, e.g. beta_t[t] is the value of beta at time t.
+        self.T = len(beta_t) - 1
         self.device = device
         self.decoder = decoder
         self.criterion = criterion
@@ -127,15 +129,6 @@ class DDPM(nn.Module):
         and generation, currently t for degrade is a vector, t for generate
         is a scalar.
         """
-        # Calculate alpha_t from beta_t.
-        alpha_t = np.exp(
-            np.cumsum(np.log(1 - beta_t))
-        )  # Cumprod in log-space (better precision)
-
-        # Insert 0 at the beginning of beta_t and alpha_t to make the indexing
-        # more intuitive. This way, beta_t[t] is the value of beta at time t.
-        beta_t = np.insert(beta_t, 0, torch.tensor(0.0))
-        alpha_t = np.insert(alpha_t, 0, torch.tensor(0.0))
 
         # Convert to tensors and register as buffers.
         beta_t = torch.tensor(beta_t, device=device)
@@ -232,7 +225,6 @@ class DDPM(nn.Module):
         # Generate iteratively and store the samples at the relevant indices.
         for idx, t in enumerate(visualise_ts, start=len(visualise_ts) + 1):
             t_scalar = t[0]
-            ic(t_scalar, prev_t)
             z_t = self.generate(z_t, t_scalar, start_t=prev_t)
             samples[(idx) * x.shape[0] : (idx + 1) * x.shape[0]] = z_t
             prev_t = t_scalar

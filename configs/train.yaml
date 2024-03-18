@@ -1,12 +1,12 @@
 # General Setup
-output_dir: "./runs/cond_test_2"
+output_dir: "./runs/cosine_test"
 wandb: true
 m2_cw: "YourProjectName"
 seed: 42
 quick_test: false # Runs training with only 1 batch.
 
 # Experiment Control
-n_epoch: 100
+n_epoch: 10
 visualise_samples: "all"  # or [1, 5, 10]
 
 # Data Handling
@@ -22,14 +22,25 @@ decoder_model_params:
   n_hidden: [16, 32, 32, 16]
 diffusion_model: "ddpm"
 
-beta_schedule: "linear"
+noise_schedule: "const"
 T: 1000
-custom_beta_schedule_params:
-  beta_1: 0.0001
-  beta_2: 0.02
+
+# linear noise schedule params.
+# custom_noise_schedule_params:
+#   beta_1: 0.0001
+#   beta_2: 0.02
+
+# cosine noise schedule params.
+# custom_noise_schedule_params:
+#   beta_max: 0.9 # Should tune properly according to paper... https://arxiv.org/abs/2102.09672
+#   s: 0.008
+
+# constant noise schedule params.
+custom_noise_schedule_params:
+  beta: 0.001
 
 # Training Configuration
 lr: 0.0002
 
 # Data visualization
-visualise_ts: [100,500,750]
+visualise_ts: [250, 500, 750, 1000]
