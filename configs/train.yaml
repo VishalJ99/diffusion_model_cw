@@ -1,34 +1,41 @@
-# General Setup
-output_dir: "./runs/cosine_test"
+# General Setup.
+output_dir: "./runs/const_good_lim"
 wandb: true
 m2_cw: "YourProjectName"
 seed: 42
 quick_test: false # Runs training with only 1 batch.
 
-# Experiment Control
-n_epoch: 10
-visualise_samples: "all"  # or [1, 5, 10]
-
-# Data Handling
+# Training loop hyper params.
+n_epoch: 50
 train_batch_size: 128
 val_batch_size: 512
 val_fraction: 0.2
 
-# Model Configuration
+# Conditional sampling configuration.
+visualise_ts: [100, 1000, 2000] # Time steps to visualise conditional sampling process at during validation.
+num_cond_samples: 4 # number of conditional samples to generate during validation.
+
+# Model Configuration.
 decoder_model: "cnn"
 decoder_model_params:
   in_channels: 1
   expected_shape: [28, 28]
   n_hidden: [16, 32, 32, 16]
-diffusion_model: "ddpm"
 
-noise_schedule: "const"
+diffusion_model: "ddpm"
+diffusion_model_weights: null
+
+# Model hyper parameters.
+lr: 0.0002
+
+# Noise Schedule
+noise_schedule: "linear"
 T: 1000
 
 # linear noise schedule params.
-# custom_noise_schedule_params:
-#   beta_1: 0.0001
-#   beta_2: 0.02
+custom_noise_schedule_params:
+  beta_1: 0.0001
+  beta_2: 0.02
 
 # cosine noise schedule params.
 # custom_noise_schedule_params:
@@ -36,11 +43,5 @@ T: 1000
 #   s: 0.008
 
 # constant noise schedule params.
-custom_noise_schedule_params:
-  beta: 0.001
-
-# Training Configuration
-lr: 0.0002
-
-# Data visualization
-visualise_ts: [250, 500, 750, 1000]
+# custom_noise_schedule_params:
+#   beta: 0.001
