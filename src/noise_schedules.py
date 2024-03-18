@@ -1,5 +1,4 @@
 import numpy as np
-from utils import stable_cumprod
 
 # NOTE: T must be the first argument for it to be initialised properly
 # in the train.py script.
@@ -10,19 +9,18 @@ from utils import stable_cumprod
 # on the mps device.
 
 
+def stable_cumprod(x):
+    # Cumprod in log-space (better precision).
+    return np.exp(np.cumsum(np.log(x)))
+
+
 def linear_noise_schedule(T, beta_1, beta_2):
-    # NOTE: T must be the first argument for it to be initialised properly
-    # in the train.py script.
-    """Returns pre-computed schedules for DDPM sampling
-    with a linear noise schedule."""
     assert beta_1 < beta_2 < 1.0, "beta1 and beta2 must be in (0, 1)"
 
-    # Calculate beta_t from t.
     beta_t = (beta_2 - beta_1) * np.arange(0, T, dtype=np.float32)
     beta_t /= T - 1
     beta_t += beta_1
-
-    # Calculate alpha_t from beta_t.
+    
     alpha_t = stable_cumprod(1 - beta_t)
 
     beta_t = np.insert(beta_t, 0, 0)

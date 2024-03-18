@@ -123,7 +123,3 @@ def make_cond_samples_plot(z_t, visualise_ts, nrows, fs=12):
     plt.tight_layout()
     return plt
 
-
-def stable_cumprod(x):
-    # Cumprod in log-space (better precision).
-    return np.exp(np.cumsum(np.log(x)))
