@@ -3,7 +3,7 @@ import os
 from utils import (
     seed_everything,
     fetch_model,
-    fetch_beta_schedule,
+    fetch_noise_schedule,
     make_cond_samples_plot,
 )
 import torch
@@ -13,6 +13,7 @@ from torchvision.datasets import MNIST
 from accelerate import Accelerator
 from tqdm import tqdm
 from torchvision.utils import save_image, make_grid
+from torch.utils.data import DataLoader, Subset
 import csv
 import yaml
 import numpy as np
@@ -81,15 +82,15 @@ def main(config):
         train_indices = list(range(config["train_batch_size"]))
         val_indices = list(range(config["val_batch_size"]))
 
-        train_set = torch.utils.data.Subset(train_set, train_indices)
-        val_set = torch.utils.data.Subset(val_set, val_indices)
+        train_set = Subset(train_set, train_indices)
+        val_set = Subset(val_set, val_indices)
 
     # Initialise the dataloaders.
-    train_loader = torch.utils.data.DataLoader(
+    train_loader = DataLoader(
         train_set, batch_size=config["train_batch_size"], shuffle=True
     )
 
-    val_loader = torch.utils.data.DataLoader(
+    val_loader = DataLoader(
         val_set,
         batch_size=config["val_batch_size"],
         shuffle=False,
@@ -99,15 +100,15 @@ def main(config):
     diffusion_model_class = fetch_model(config["diffusion_model"])
 
     # Load the diffusion model hyper parameters.
-    beta_schedule = fetch_beta_schedule(config["beta_schedule"])
+    noise_schedule = fetch_noise_schedule(config["noise_schedule"])
     T = config["T"]
-    beta_t = beta_schedule(T, **config["custom_beta_schedule_params"])
+    beta_t, alpha_t = noise_schedule(T, **config["custom_noise_schedule_params"])
 
-    assert len(beta_t) == T, "Beta schedule must have T elements."
+    assert len(beta_t) - 1 == T, "Beta schedule must have T elements."
 
     # Initialise the models.
     decoder = decoder_model_class(**config["decoder_model_params"])
-    model = diffusion_model_class(decoder, beta_t, device)
+    model = diffusion_model_class(decoder, beta_t, alpha_t, device)
     optim = torch.optim.Adam(model.parameters(), lr=2e-4)
 
     # Lets HuggingFace's Accelerate handle the device placement
