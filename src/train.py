@@ -96,29 +96,41 @@ def main(config):
         shuffle=False,
     )
 
+    # Fetch the models and noise schedule.
     decoder_model_class = fetch_model(config["decoder_model"])
     diffusion_model_class = fetch_model(config["diffusion_model"])
-
-    # Load the diffusion model hyper parameters.
     noise_schedule = fetch_noise_schedule(config["noise_schedule"])
+
+    # Create the noise schedule.
     T = config["T"]
     beta_t, alpha_t = noise_schedule(T, **config["custom_noise_schedule_params"])
 
-    assert len(beta_t) - 1 == T, "Beta schedule must have T elements."
+    assert len(beta_t) - 1 == T, f"Beta schedule must have {T+1} elements."
 
     # Initialise the models.
     decoder = decoder_model_class(**config["decoder_model_params"])
     model = diffusion_model_class(decoder, beta_t, alpha_t, device)
-    optim = torch.optim.Adam(model.parameters(), lr=2e-4)
 
-    # Lets HuggingFace's Accelerate handle the device placement
-    # and gradient accumulation.
+    # Load weights if specified.
+    if config["diffusion_model_weights"]:
+        model.load_state_dict(torch.load(config["diffusion_model_weights"]))
+        print("[INFO] Loaded model weights from:", config["diffusion_model_weights"])
+
+    # Define optimiser.
+    optim = torch.optim.Adam(model.parameters(), lr=config["lr"])
+
     model, optim, train_loader, val_loader = accelerator.prepare(
         model, optim, train_loader, val_loader
     )
+
     n_epoch = config["n_epoch"]
 
+    # Load visualisation params.
     visualise_ts = config["visualise_ts"]
+    num_cond_samples = config["num_cond_samples"]
+    assert (
+        num_cond_samples <= config["val_batch_size"]
+    ), "num_cond_samples must be less than or equal to val_batch_size"
 
     best_model_weights_fname = "best_model.pth"
     best_model_weights_fpath = os.path.join(
@@ -126,6 +138,7 @@ def main(config):
     )
     all_train_losses = []
     lowest_val_loss = np.inf
+
     # Open the CSV file and prepare to write losses.
     loss_csv_path = os.path.join(output_dir, "losses.csv")
     with open(loss_csv_path, mode="w", newline="") as file:
@@ -144,7 +157,6 @@ def main(config):
             loss = model(x)
             accelerator.backward(loss)
             optim.step()
-
             wandb.log({"train_loss": loss.item()})
             total_train_loss += loss.item()
 
@@ -171,7 +183,7 @@ def main(config):
             print(f"Epoch {i} - average val loss: {average_val_loss}")
 
             # Generate conditional samples.
-            z_t = model.cond_sample(x[:4], visualise_ts, device="mps:0")
+            z_t = model.cond_sample(x[:num_cond_samples], visualise_ts, device="mps:0")
             plt = make_cond_samples_plot(z_t, visualise_ts, 4)
             plt.savefig(
                 os.path.join(cond_samples_dir_path, f"cond_sample_{i:04d}.png"), dpi=300
@@ -181,7 +193,7 @@ def main(config):
             xh = model.uncond_sample(16, (1, 28, 28), accelerator.device)
             grid = make_grid(xh, nrow=4)
             image_path = os.path.join(
-                uncond_samples_dir_path, f"ddpm_sample_{i:04d}.png"
+                uncond_samples_dir_path, f"cond_sample_{i:04d}.png"
             )
             save_image(grid, image_path)
 
