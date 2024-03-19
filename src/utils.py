@@ -2,7 +2,8 @@ import torch
 import random
 import numpy as np
 import os
-from models import CNN, DDPM
+from models.decoder_models import CNN
+from models.diffusion_models import DDPM
 import matplotlib.pyplot as plt
 from torchvision.utils import make_grid
 from noise_schedules import (
@@ -10,6 +11,7 @@ from noise_schedules import (
     linear_noise_schedule,
     cosine_noise_schedule,
 )
+from piq import ssim, psnr
 
 
 def seed_everything(seed):
@@ -123,3 +125,46 @@ def make_cond_samples_plot(z_t, visualise_ts, nrows, fs=12):
     plt.tight_layout()
     return plt
 
+
+def make_uncond_samples_plot(xh, nrows):
+    # Normalise every image in the batch.
+    for idx, img in enumerate(xh):
+        xh[idx] = (img - img.min()) / (img.max() - img.min())
+
+    # Make a grid of the images.
+    grid = make_grid(xh, nrow=nrows)
+
+    # Plot the grid.
+    fig, ax = plt.subplots(figsize=(12, 12))  # Adjust size as needed
+    ax.imshow(grid.cpu().numpy().transpose(1, 2, 0), cmap="gray", vmin=0, vmax=1)
+    ax.axis("off")
+    return plt
+
+def calc_image_quality_metrics(x, x_hat):
+    # TODO: vectorise this. Saving mean so dont need individual scores.
+    # Can vectorise the normalisation step, metric functions are already vectorised.
+    for idx in range(len(x)):
+        src_img = x[idx]
+        rec_img = x_hat[idx]
+        
+        # Normalise the images.
+        src_img = (src_img - src_img.min()) / (src_img.max() - src_img.min())
+        rec_img = (rec_img - rec_img.min()) / (rec_img.max() - rec_img.min())
+        
+        x[idx] = src_img
+        x_hat[idx] = rec_img
+
+    # Calculate the metrics.
+    rmse_score = torch.sqrt(torch.mean((x - x_hat) ** 2))
+    ssim_score = ssim(x_hat, x, data_range=1.0)
+    psnr_score = psnr(x_hat, x, data_range=1.0)
+
+    metrics = (rmse_score, ssim_score, psnr_score)
+    return metrics
+
+# Test this!
+# def normalise_batch(batch):
+#     # Assumes batch is of shape [N, C, H, W]
+#     min_vals = torch.min(batch.view(batch.size(0), -1), dim=1)[0].view(-1, 1, 1, 1)
+#     max_vals = torch.max(batch.view(batch.size(0), -1), dim=1)[0].view(-1, 1, 1, 1)
+#     return (batch - min_vals) / (max_vals - min_vals)
