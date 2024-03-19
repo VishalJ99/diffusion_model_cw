@@ -12,6 +12,9 @@
 \usepackage{subcaption}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
+\usepackage{booktabs} % For prettier tables
+\usepackage{siunitx}
+
 % Set page margins
 \geometry{a4paper, margin=1in}
 
@@ -103,32 +106,77 @@ The training algorithm works as follows: Loop over all batches in the current ep
 \EndWhile
 \end{algorithmic}
 \end{algorithm}
-\section{Training}
-In this section the training of the default diffusion model is documented for 2 different sets of hyper parameters.
-\subsection{Choice of Hyperparameters}
+
+\subsubsection{Choice of Hyperparameters}
 To demonstrate some of the underlying assumptions behind diffusion models, the following runs vary the noise schedule.
 Specifically, a constant noise schedule is used where $\beta_t = C, \ \forall t \in \{1,2,...,T\}$, where $C$ is a constant.
 The value of C and the total number of steps $T$ are varied between runs. The first run uses a small value of $C$ and a large value of $T$, while the second run uses a large value of $C$ and a smaller value of $T$. The first run is expected to perform better as only a small amount of noise at each step. This is significant because one of the assumptions used to derive the loss defined by \ref{eq:loss_function} is that the reverse distributions $Pr(z_{t-1}|z_{t})$ are well approximated by a normal distribution. This approximation is only valid for small $\beta_t$.
 \subsubsection{Training and Validation Loss Curves}
-Figure \ref{fig:q1b_loss_curves} shows the training and validation loss curves for the two runs. The first run has a smaller value of $C$ and a larger value of $T$, while the second run has a larger value of $C$ and a smaller value of $T$. The training loss curves for both runs are similar, with the loss decreasing rapidly at the start and then plateauing. The validation loss curves for both runs are also similar, with the loss decreasing rapidly at the start and then plateauing. The validation loss for the first run is lower than the second run, indicating that the first run has a better model. This is consistent with the expectation that a smaller value of $C$ and a larger value of $T$ would result in a better model.
-
+Figure \ref{fig:q1b_loss_curves} shows the training and validation loss curves for the two runs. The loss function is the mean squared error between the predicted noise and the true noise.
 \begin{figure}[ht]
     \centering
     \includegraphics[width=0.8\textwidth]{figs/q1b_loss.png}
-    \caption{Description of the figure.}
+    \caption{Training and validation loss curves. Training loss shown in blue, validation loss in orange. Red dots indicate epochs 5, 15, 30 and 45 in which the models were uncondtionally and conditionally sampled from.}
     \label{fig:q1b_loss_curves}
 \end{figure}
 
 \subsubsection{Quality of samples}
+
 Show conditional generation and uncondtional generation 3 different epochs
+\begin{figure}[H]
+    \centering
+    \begin{minipage}{0.48\textwidth}
+        \includegraphics[width=\linewidth]{figs/q1b_good_cond_samples.png}
+        \caption{Caption for the left image.}
+        \label{fig:left_img}
+    \end{minipage}\hfill
+    \begin{minipage}{0.48\textwidth}
+        \includegraphics[width=\linewidth]{figs/q1b_bad_cond_samples.png}
+        \caption{Caption for the right image.}
+        \label{fig:right_img}
+    \end{minipage}
+\end{figure}
 
-\section{Evaluation}
+\begin{figure}[H]
+    \centering
+    \begin{minipage}{0.48\textwidth}
+        \includegraphics[width=\linewidth]{figs/q1b_good_uncond_samples.png}
+        \caption{Caption for the left image.}
+        \label{fig:left_img}
+    \end{minipage}\hfill
+    \begin{minipage}{0.48\textwidth}
+        \includegraphics[width=\linewidth]{figs/q1b_bad_uncond_samples.png}
+        \caption{Caption for the right image.}
+        \label{fig:right_img}
+    \end{minipage}
+\end{figure}
+\subsection{Evaluation}
+\subsubsection{Discussion of differences}
+\begin{table}[H]
+    \centering
+    \caption{Comparison of Model Performances}
+    \begin{tabular}{l|lllll}
+    \hline
+    Model          & FID Score           & Avg Test Loss        & Avg RMSE           & Avg SSIM         & Avg PSNR           \\ \hline
+    Low $\beta$, High $T$ & \textbf{154}    & 0.0245              & \textbf{0.306}            & \textbf{0.164} & \textbf{10.5}    \\
+    High $\beta$, Low $T$  & 364             & \textbf{0.00275}     & 0.402  & 0.0336          & 7.94              \\ \hline
+    \end{tabular}
+    \end{table}
 
-\subsection{Discussion of differences}
 
-
-
-\end{document}
-
+Good and bad unconditional samples for the good model
+\begin{figure}[H]
+    \centering
+    \begin{minipage}{0.48\textwidth}
+        \includegraphics[width=\linewidth]{figs/q1c_nice_good_uncond_samples.png}
+        \caption{Caption for the left image.}
+        \label{fig:left_img_2}
+    \end{minipage}\hfill
+    \begin{minipage}{0.48\textwidth}
+        \includegraphics[width=\linewidth]{figs/q1c_nice_bad_uncond_samples.png}
+        \caption{Caption for the right image.}
+        \label{fig:right_img_2}
+    \end{minipage}
+\end{figure}
 
 \end{document}

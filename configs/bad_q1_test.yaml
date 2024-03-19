@@ -1,0 +1,38 @@
+# General Setup.
+output_dir: "./runs/const_q1_bad_run"
+seed: 42
+calc_metrics: false
+quick_test: false
+metric_sample_size: 1000 # if set this is the dataset size used for metrics calculation.
+
+# Model Configuration.
+decoder_model: "cnn"
+decoder_model_params:
+  in_channels: 1
+  expected_shape: [28, 28]
+  n_hidden: [16, 32, 32, 16]
+
+diffusion_model: "ddpm"
+diffusion_model_weights: ./runs/const_q1_bad_run/model_weights/best_model.pth
+
+# Get these from the config in the runs directory.
+# TODO: modify test.py so it fetches it automatically.
+# Model hyper parameters.
+
+# Noise Schedule
+noise_schedule: "const"
+T: 200
+
+# linear noise schedule params.
+# custom_noise_schedule_params:
+#   beta_1: 0.0001
+#   beta_2: 0.02
+
+# cosine noise schedule params.
+# custom_noise_schedule_params:
+#   beta_max: 0.9 # Should tune properly according to paper... https://arxiv.org/abs/2102.09672
+#   s: 0.00001
+
+# constant noise schedule params.
+custom_noise_schedule_params:
+  beta: 0.1

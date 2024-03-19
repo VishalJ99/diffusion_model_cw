@@ -6,6 +6,7 @@ from torch.utils.data import Subset, DataLoader
 import torchvision.transforms as transforms
 import torch
 from torchmetrics.image.fid import FrechetInceptionDistance
+from tqdm import tqdm
 
 
 def main(output_file, weights_file, config, num_samples, bs):
@@ -49,7 +50,8 @@ def main(output_file, weights_file, config, num_samples, bs):
         fid = FrechetInceptionDistance(normalize=True)
         # Need to pass data in batches since data is upsampled to 299x299,
         # which can cause memory issues if all data is passed at once.
-        for x, _ in dataloader:
+        pbar = tqdm(dataloader, desc="Calculating FID score")
+        for x, _ in pbar:
             x = x.to(device)
 
             # Generate fake samples.
@@ -84,7 +86,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "output_file", type=str, help="Path to output file where score is saved."
     )
-    parser.add_argument("weights_file", type=str, help="Path to model weights file")
+    parser.add_argument(
+        "weights_file",
+        type=str,
+        help="Path to diffusion model\
+                        weight .pt file",
+    )
     parser.add_argument(
         "config_path",
         type=str,
