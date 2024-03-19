@@ -41,14 +41,16 @@ def main(config):
         # Add the git hash to the config if the .git file exists.
         config["git_hash"] = os.popen("git rev-parse HEAD").read().strip()
 
-    # Save the config to the output directory for reproducibility.
-    config_file = os.path.join(output_dir, "config.yaml")
-    with open(config_file, "w") as f:
-        yaml.dump(config, f)
-
     if config["wandb"]:
         # Use wandb to log the run.
-        wandb.init(project=config["wandb_project"], config=config)
+        run = wandb.init(project=config["wandb_project"], config=config)
+        run_url = run.get_url()
+        config["run_url"] = run_url
+    
+    # Save the config to the output directory for reproducibility.
+    config_file = os.path.join(output_dir, "train_config.yaml")
+    with open(config_file, "w") as f:
+        yaml.dump(config, f)
 
     print("-" * 50)
     print("[INFO] Config options set.")

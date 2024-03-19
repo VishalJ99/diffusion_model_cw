@@ -140,6 +140,7 @@ def make_uncond_samples_plot(xh, nrows):
     ax.axis("off")
     return plt
 
+
 def calc_image_quality_metrics(x, x_hat):
     # TODO: vectorise this. Saving mean so dont need individual scores.
     # Can vectorise the normalisation step, metric functions are already vectorised.
@@ -155,9 +156,9 @@ def calc_image_quality_metrics(x, x_hat):
         x_hat[idx] = rec_img
 
     # Calculate the metrics.
-    rmse_score = torch.sqrt(torch.mean((x - x_hat) ** 2))
-    ssim_score = ssim(x_hat, x, data_range=1.0)
-    psnr_score = psnr(x_hat, x, data_range=1.0)
+    rmse_score = torch.sqrt(torch.mean((x - x_hat) ** 2)).item()
+    ssim_score = ssim(x_hat, x, data_range=1.0).item()
+    psnr_score = psnr(x_hat, x, data_range=1.0).item()
 
     metrics = (rmse_score, ssim_score, psnr_score)
     return metrics
