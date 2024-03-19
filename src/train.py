@@ -5,6 +5,7 @@ from utils import (
     fetch_model,
     fetch_noise_schedule,
     make_cond_samples_plot,
+    make_uncond_samples_plot,
 )
 import torch
 import sys
@@ -12,7 +13,6 @@ import torchvision.transforms as transforms
 from torchvision.datasets import MNIST
 from accelerate import Accelerator
 from tqdm import tqdm
-from torchvision.utils import save_image, make_grid
 from torch.utils.data import DataLoader, Subset
 import csv
 import yaml
@@ -48,7 +48,7 @@ def main(config):
 
     if config["wandb"]:
         # Use wandb to log the run.
-        wandb.init(project=config["m2_cw"], config=config)
+        wandb.init(project=config["wandb_project"], config=config)
 
     print("-" * 50)
     print("[INFO] Config options set.")
@@ -113,7 +113,9 @@ def main(config):
 
     # Load weights if specified.
     if config["diffusion_model_weights"]:
-        model.load_state_dict(torch.load(config["diffusion_model_weights"]))
+        model.load_state_dict(
+            torch.load(config["diffusion_model_weights"], map_location=device)
+        )
         print("[INFO] Loaded model weights from:", config["diffusion_model_weights"])
 
     # Define optimiser.
@@ -174,7 +176,8 @@ def main(config):
             # Validation loop.
             model.eval()
             total_val_loss = 0
-            for x, _ in val_loader:
+            val_pbar = tqdm(val_loader)
+            for x, _ in val_pbar:
                 loss = model(x)
                 wandb.log({"val_loss": loss.item()})
                 total_val_loss += loss.item()
@@ -184,18 +187,22 @@ def main(config):
 
             # Generate conditional samples.
             z_t = model.cond_sample(x[:num_cond_samples], visualise_ts, device="mps:0")
-            plt = make_cond_samples_plot(z_t, visualise_ts, 4)
-            plt.savefig(
-                os.path.join(cond_samples_dir_path, f"cond_sample_{i:04d}.png"), dpi=300
+
+            plt = make_cond_samples_plot(z_t, visualise_ts, num_cond_samples)
+            cond_image_path = os.path.join(
+                cond_samples_dir_path, f"cond_sample_{i:04d}.png"
             )
+            plt.savefig(cond_image_path, dpi=300)
+            plt.close()
 
             # Generate and save samples unconditionally.
             xh = model.uncond_sample(16, (1, 28, 28), accelerator.device)
-            grid = make_grid(xh, nrow=4)
-            image_path = os.path.join(
+            plt = make_uncond_samples_plot(xh, 4)
+            uncond_image_path = os.path.join(
                 uncond_samples_dir_path, f"cond_sample_{i:04d}.png"
             )
-            save_image(grid, image_path)
+            plt.savefig(uncond_image_path, dpi=300)
+            plt.close()
 
         if average_val_loss < lowest_val_loss:
             # Save model weights.
