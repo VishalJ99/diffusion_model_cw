@@ -31,7 +31,9 @@ def linear_noise_schedule(T, beta_1, beta_2):
 
 def cosine_noise_schedule(T, beta_max=0.1, s=0.008):
     # https://arxiv.org/abs/2102.09672
-
+    # TODO calc optimal value for s for MNIST data.
+    # s is a small constant to prevent beta_t from becoming too large.
+    # for small t. Should be set so sqrt(beta_1) = 1 / pixel bin width
     def f(t, s):
         freq = ((t / T) + s) / (4 * (1 + s))
         return np.cos(2 * np.pi * freq) ** 2
