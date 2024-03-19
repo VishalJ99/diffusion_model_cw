@@ -116,7 +116,7 @@ class DDPM(nn.Module):
         z_t, _ = self.degrade(x, self.T)
         prev_t = self.T
 
-        # restore iteratively and store the samples at the relevant indices.
+        # Restore iteratively and store the samples at the relevant indices.
         for idx, t in enumerate(visualise_ts, start=len(visualise_ts) + 1):
             t_scalar = t[0]
             z_t = self.restore(z_t, t_scalar, start_t=prev_t)
