@@ -46,7 +46,7 @@ def main(config):
         run = wandb.init(project=config["wandb_project"], config=config)
         run_url = run.get_url()
         config["run_url"] = run_url
-    
+
     # Save the config to the output directory for reproducibility.
     config_file = os.path.join(output_dir, "train_config.yaml")
     with open(config_file, "w") as f:
@@ -188,7 +188,9 @@ def main(config):
             print(f"Epoch {i} - average val loss: {average_val_loss}")
 
             # Generate conditional samples.
-            z_t = model.cond_sample(x[:num_cond_samples], visualise_ts, device="mps:0")
+            z_t = model.cond_sample(
+                x[:num_cond_samples], visualise_ts, device=accelerator.device
+            )
 
             plt = make_cond_samples_plot(z_t, visualise_ts, num_cond_samples)
             cond_image_path = os.path.join(
