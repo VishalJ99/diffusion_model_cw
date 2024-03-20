@@ -22,7 +22,7 @@ def main(output_file, weights_file, config, num_samples, bs):
     pre_transforms = transforms.Compose(
         [transforms.ToTensor(), transforms.Normalize((0.5,), (1.0))]
     )
-    dataset = MNIST("./data", train=True, download=True, transform=pre_transforms)
+    dataset = MNIST("./data", train=False, download=True, transform=pre_transforms)
     assert num_samples <= len(
         dataset
     ), "Number of samples must be less than or equal to the dataset size"
