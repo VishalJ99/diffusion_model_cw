@@ -2,7 +2,7 @@ import torch
 import random
 import numpy as np
 import os
-from models.decoder_models import CNN
+from models.decoder_models import CNN, Unet
 from models.diffusion_models import DDPM
 import matplotlib.pyplot as plt
 from torchvision.utils import make_grid
@@ -46,6 +46,7 @@ def fetch_model(model_key):
     model_dict = {
         "cnn": CNN,
         "ddpm": DDPM,
+        "unet": Unet,
     }
 
     return model_dict[model_key]
@@ -60,10 +61,16 @@ def fetch_noise_schedule(schedule_key):
     }
     return noise_schedule_dict[schedule_key]
 
+"""
+TODO: Add winsorisation before any normalisation, make a seperate function for this
+seems to be a common operation, also vectorise it instead of looping over the batch.
+"""
+
 
 def make_cond_samples_plot(z_t, visualise_ts, nrows, fs=12):
     # Normalise every image in the batch.
     for idx, img in enumerate(z_t):
+        img = winsorize_tensor(img, 1, 99)
         z_t[idx] = (img - img.min()) / (img.max() - img.min())
 
     # Make a grid of the images.
@@ -129,6 +136,7 @@ def make_cond_samples_plot(z_t, visualise_ts, nrows, fs=12):
 def make_uncond_samples_plot(xh, nrows):
     # Normalise every image in the batch.
     for idx, img in enumerate(xh):
+        img = winsorize_tensor(img, 1, 99)
         xh[idx] = (img - img.min()) / (img.max() - img.min())
 
     # Make a grid of the images.
@@ -169,3 +177,17 @@ def calc_image_quality_metrics(x, x_hat):
 #     min_vals = torch.min(batch.view(batch.size(0), -1), dim=1)[0].view(-1, 1, 1, 1)
 #     max_vals = torch.max(batch.view(batch.size(0), -1), dim=1)[0].view(-1, 1, 1, 1)
 #     return (batch - min_vals) / (max_vals - min_vals)
+
+
+def winsorize_tensor(tensor, lower_percentile, upper_percentile):
+    # Calculate the percentile values
+    lower_bound = torch.quantile(tensor, lower_percentile / 100.0)
+    upper_bound = torch.quantile(tensor, upper_percentile / 100.0)
+
+    # Winsorize the tensor
+    winsorized_tensor = torch.where(tensor < lower_bound, lower_bound, tensor)
+    winsorized_tensor = torch.where(tensor > upper_bound, upper_bound,
+                                    winsorized_tensor)
+    
+    return winsorized_tensor
+
