@@ -1,85 +1,57 @@
 import torch
 import torch.nn as nn
+from torchvision.transforms import GaussianBlur
+from abc import ABC, abstractmethod
+from typing import Optional
 
-
-class DDPM(nn.Module):
+class DiffusionModel(nn.Module, ABC):
     def __init__(
-        self,
-        decoder,
-        beta_t,
-        alpha_t,
-        device,
-        criterion: nn.Module = nn.MSELoss(),
+        self, 
+        decoder: nn.Module,
+        beta_t: list[float],
+        alpha_t: list[float],
+        device: torch.device,
+        criterion: nn.Module = nn.MSELoss()
     ) -> None:
         super().__init__()
-        # beta_t has T + 1 elements, where T is the number of steps.
-        # Allows for convenient indexing, e.g. beta_t[t] is the value of beta at time t.
-        self.T = len(beta_t) - 1
-        self.device = device
-        self.decoder = decoder
-        self.criterion = criterion
-        """
-        TODO: Define abstract class, standardise type of t for degradation
-        and generation, currently t for degrade is a vector, t for restore
-        is a scalar.
-        """
-
+        self.T: int = len(beta_t) - 1
+        self.device: torch.device = device
+        self.decoder: nn.Module = decoder
+        self.criterion: nn.Module = criterion
+        
         # Convert to tensors and register as buffers.
-        beta_t = torch.tensor(beta_t, device=device)
-        alpha_t = torch.tensor(alpha_t, device=device)
+        beta_t_tensor: torch.Tensor = torch.tensor(beta_t, device=device)
+        alpha_t_tensor: torch.Tensor = torch.tensor(alpha_t, device=device)
+        self.register_buffer("beta_t", beta_t_tensor)
+        self.register_buffer("alpha_t", alpha_t_tensor)
 
-        self.register_buffer("beta_t", beta_t)
-        self.register_buffer("alpha_t", alpha_t)
+    @abstractmethod
+    def degrade(self, x: torch.Tensor, t: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Method to be implemented by subclass: degrades the input x at time t."""
+        pass
 
-    def degrade(self, x, t):
-        # Degradation step.
-        eps = torch.randn_like(x)  # eps ~ N(0, 1)
-        alpha_t = self.alpha_t[t, None, None, None]  # Get right shape for broadcasting.
-        z_t = torch.sqrt(alpha_t) * x + torch.sqrt(1 - alpha_t) * eps
-        return z_t, eps
+    @abstractmethod
+    def restore(self, z_t: torch.Tensor, end_t: int, start_t: Optional[int] = None) -> torch.Tensor:
+        """Method to be implemented by subclass: restores z_t from end_t to start_t."""
+        pass
+    
+    @abstractmethod
+    def uncond_sample(self, n_sample: int, size, device) -> torch.Tensor:
+        pass
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Algorithm 18.1 in Prince"""
-        # Draw t uniformly from 1 to T.
-        t = torch.randint(1, self.T, (x.shape[0],), device=x.device)
+            """Algorithm 18.1 in Prince"""
+            # Draw t uniformly from 1 to T.
+            t = torch.randint(1, self.T+1, (x.shape[0],), device=x.device)
 
-        # Calculate the latent variable z_t from x and eps.
-        z_t, eps = self.degrade(x, t)
+            # Calculate the latent variable z_t from x and eps.
+            z_t, eps = self.degrade(x, t)
 
-        # Estimate the noise using the decoder.
-        eps_hat = self.decoder(z_t, t / self.T)
+            # Estimate the noise using the decoder.
+            eps_hat = self.decoder(z_t, t / self.T)
 
-        # Return the loss.
-        return self.criterion(eps, eps_hat)
-
-    def restore(self, z_t, end_t, start_t=None):
-        # For broadcasting of scalar time. TODO: either make t a vector or
-        # add same broadcasting for degrade.
-        _one = torch.ones(z_t.shape[0], device=self.device)
-        if start_t:
-            assert start_t <= self.T
-        else:
-            start_t = self.T
-
-        for t in range(start_t, end_t, -1):
-            alpha_t = self.alpha_t[t]
-            beta_t = self.beta_t[t]
-
-            z_t -= (beta_t / torch.sqrt(1 - alpha_t)) * self.decoder(
-                z_t, (t / self.T) * _one
-            )
-            z_t /= torch.sqrt(1 - beta_t)
-
-            if t > 1:
-                z_t += torch.sqrt(beta_t) * torch.randn_like(z_t)
-
-        return z_t
-
-    def uncond_sample(self, n_sample: int, size, device) -> torch.Tensor:
-        """Algorithm 18.2 in Prince"""
-        z_t = torch.randn(n_sample, *size, device=device)
-        x_t = self.restore(z_t, 0)
-        return x_t
+            # Return the loss.
+            return self.criterion(eps, eps_hat)
 
     def cond_sample(self, x, visualise_ts, device):
         # Check visualise t is in ascending order.
@@ -128,3 +100,124 @@ class DDPM(nn.Module):
         samples[-x.shape[0] :] = z_t
 
         return samples
+
+
+class DDPM(DiffusionModel):
+    def __init__(
+        self,
+        decoder,
+        beta_t,
+        alpha_t,
+        device,
+        criterion: nn.Module = nn.MSELoss(),
+    ) -> None:
+        super().__init__(decoder, beta_t, alpha_t, device, criterion)
+
+    def degrade(self, x, t):
+        # Degradation step.
+        eps = torch.randn_like(x)  # eps ~ N(0, 1)
+        alpha_t = self.alpha_t[t, None, None, None]  # Get right shape for broadcasting.
+        z_t = torch.sqrt(alpha_t) * x + torch.sqrt(1 - alpha_t) * eps
+        return z_t, eps
+
+    def restore(self, z_t, end_t, start_t=None):
+        """Algorithm 18.2 in Prince"""
+        # For broadcasting of scalar time. TODO: either make t a vector or
+        # add same broadcasting for degrade.
+        _one = torch.ones(z_t.shape[0], device=self.device)
+        if start_t:
+            assert start_t <= self.T
+        else:
+            start_t = self.T
+
+        for t in range(start_t, end_t, -1):
+            alpha_t = self.alpha_t[t]
+            beta_t = self.beta_t[t]
+
+            z_t -= (beta_t / torch.sqrt(1 - alpha_t)) * self.decoder(
+                z_t, (t / self.T) * _one
+            )
+            z_t /= torch.sqrt(1 - beta_t)
+
+            if t > 1:
+                z_t += torch.sqrt(beta_t) * torch.randn_like(z_t)
+
+        return z_t
+    
+    def uncond_sample(self, n_sample: int, size, device) -> torch.Tensor:
+        z_t = torch.randn(n_sample, *size, device=device)
+        samples = self.restore(z_t, 0)
+        return samples
+
+class GaussianBlurDM(DiffusionModel):
+    def __init__(
+        self,
+        decoder,
+        beta_t,
+        alpha_t,
+        device,
+        kernel_size=11,
+        criterion: nn.Module = nn.MSELoss(),
+    ) -> None:
+        super().__init__(decoder, beta_t, alpha_t, device, criterion)
+        self.kernel_size = kernel_size
+    
+    def degrade(self, x, t):
+        # Degradation step.
+        # TODO: Convolution is a linear transform so find the
+        # transform equivalent to applying the t gaussian blurs.
+        # https://stackoverflow.com/questions/16798888/2-d-convolution-as-a-matrix-matrix-multiplication
+        
+        # Not implemented different ts for each el in batch.
+        # Map t to a scalar. Some methods call this passing t as a scalar.
+        # Some methods call this passing t as a vector. TODO: make it consistent.
+
+        if not isinstance(t, int):
+            t = int(t[0]) if t.numel() > 1 else int(t)
+        
+        z_t = x.clone()
+        for i in range(1, t+1):
+            blur = GaussianBlur(self.kernel_size, float(self.beta_t[i]))
+            z_t = blur(z_t)
+
+        eps = z_t - x
+        return z_t, eps
+
+    def restore(self, z_t, end_t, start_t=None):
+        # Algo 2 in cold diffusion paper for reconstruction. 
+        # https://arxiv.org/abs/2208.09392
+        _one = torch.ones(z_t.shape[0], device=self.device)
+        for t in range(self.T, 0, -1):
+            x_hat_0 = self.decoder(z_t, (t / self.T)*_one)
+            z_t = z_t - self.degrade(x_hat_0, t)[0] + self.degrade(x_hat_0, t-1)[0]
+
+        return z_t
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Draw t uniformly from 1 to T.
+        _one = torch.ones(x.shape[0], device=self.device)
+        t = torch.randint(1, self.T+1, (), device=x.device)
+        
+        # Degradation step.
+        z_t, eps = self.degrade(x, t)
+        
+        # Reconstruction step.
+        x_hat = self.decoder(z_t, (t / self.T) * _one)
+        
+        # Return loss between image and reconstructed image.
+        return self.criterion(x, x_hat)
+
+
+    def uncond_sample(self, n_sample: int, size, device) -> torch.Tensor:
+        # Generate n_samples random floats between -0.4 and -0.3 (typical vals
+        # of a heavily blurred mnist sample)
+        c = 0.1 * torch.rand(n_sample, device=device) - 0.4
+        
+        # Create uniform tensors from each float and stack them along the batch axis.
+        uniform_ts = [torch.full(size, value.item(), device=device) for value in c]
+        z_t = torch.stack(uniform_ts, dim=0)  
+
+        samples = self.restore(z_t, 0)
+
+        return samples
+

@@ -3,7 +3,7 @@ import random
 import numpy as np
 import os
 from models.decoder_models import CNN, Unet
-from models.diffusion_models import DDPM
+from models.diffusion_models import DDPM, GaussianBlurDM
 import matplotlib.pyplot as plt
 from torchvision.utils import make_grid
 from noise_schedules import (
@@ -47,6 +47,7 @@ def fetch_model(model_key):
         "cnn": CNN,
         "ddpm": DDPM,
         "unet": Unet,
+        "gaussian_blur": GaussianBlurDM,
     }
 
     return model_dict[model_key]
