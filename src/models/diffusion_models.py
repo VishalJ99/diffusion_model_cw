@@ -139,6 +139,7 @@ class ColdDiffusionModel(DiffusionModel):
 
         for t in range(start_t, end_t, -1):
             x_hat_0 = self.decoder(z_t, (t / self.T) * _one)
+            # TODO: Using -= breaks things, why?
             z_t = z_t - self.degrade(x_hat_0, t)[0] + self.degrade(x_hat_0, t - 1)[0]
 
         return z_t
@@ -273,11 +274,18 @@ class FashionMNISTDM(ColdDiffusionModel):
             root="data", train=False, download=True, transform=pre_transforms
         )
 
-    def degrade(self, x, t, eps_original=None):
+    def degrade(self, x, t, eps_original=None, test=False):
         if eps_original is None:
             # Fetch random mnist data.
             indices = torch.randint(0, len(self.test_dataset), (x.shape[0],))
-            eps = torch.stack([self.test_dataset[i][0] for i in indices]).to(x.device)
+            if test:
+                eps = torch.stack([self.test_dataset[i][0] for i in indices]).to(
+                    x.device
+                )
+            else:
+                eps = torch.stack([self.train_dataset[i][0] for i in indices]).to(
+                    x.device
+                )
         else:
             # see if this helps restoration.
             eps = eps_original
@@ -293,16 +301,13 @@ class FashionMNISTDM(ColdDiffusionModel):
         # Randonly sample fashion mnist test set to generate samples.
         indices = torch.randint(0, len(self.test_dataset), (n_sample,))
         z_t = torch.stack([self.test_dataset[i][0] for i in indices]).to(device)
-        samples = self.restore(z_t, 0)
+        eps_original = z_t.clone()
+        samples = self.restore(z_t, 0, eps_original=eps_original)
         return samples
 
-    def restore(self, z_t, end_t, start_t=None):
+    def restore(self, z_t, end_t, start_t=None, eps_original=None):
         # Algo 2 in cold diffusion paper for reconstruction.
         # Fixing eps for the restoration.
-        # THIS LINE IS THE REASON THE CODE IS NOT WORKING
-        # ALPHA ** 2,eps_original is being reset with fainter and fainter images,
-        # everytime restore is called.
-        eps_original = z_t.clone()
         if start_t:
             assert start_t <= self.T
         else:
@@ -310,9 +315,62 @@ class FashionMNISTDM(ColdDiffusionModel):
         _one = torch.ones(z_t.shape[0], device=self.device)
         for t in range(start_t, end_t, -1):
             x_hat_0 = self.decoder(z_t, (t / self.T) * _one)
+            # TODO: Using -= breaks things, why?
             z_t = (
                 z_t
                 - self.degrade(x_hat_0, t, eps_original)[0]
                 + self.degrade(x_hat_0, t - 1, eps_original)[0]
             )
         return z_t
+
+    def cond_sample(self, x, visualise_ts, device):
+        """Loop modified to pass eps_original to the restore method."""
+        # Check visualise t is in ascending order.
+        assert all(
+            visualise_ts[i] < visualise_ts[i + 1] for i in range(len(visualise_ts) - 1)
+        )
+        visualise_ts = torch.tensor(visualise_ts, device=device)
+
+        # Reshape for broadcasting purposes.
+        visualise_ts = visualise_ts.repeat(x.shape[0], 1).mT
+
+        # Create a tensor to store the samples.
+        samples = torch.zeros(
+            2 * (len(visualise_ts) + 1) * x.shape[0], *x.shape[1:], device=x.device
+        )
+
+        # Add the original image.
+        samples[: x.shape[0]] = x
+
+        # Forward degradation.
+        for idx, t in enumerate(visualise_ts, start=1):
+            z_t, _ = self.degrade(x, t)
+            samples[idx * x.shape[0] : (idx + 1) * x.shape[0]] = z_t
+
+        # Backward reconstruction.
+        visualise_ts = torch.flip(
+            visualise_ts,
+            [
+                0,
+            ],
+        )
+
+        # Start with fully degraded image using a random image from the test set.
+        z_t, _ = self.degrade(x, self.T, test=True)
+        prev_t = self.T
+
+        # Need to restore from the same fashion mnist case at each time step.
+        eps_original = z_t.clone()
+
+        # Restore iteratively and store the samples at the relevant indices.
+        for idx, t in enumerate(visualise_ts, start=len(visualise_ts) + 1):
+            t_scalar = t[0]
+            z_t = self.restore(z_t, t_scalar, start_t=prev_t, eps_original=eps_original)
+            samples[(idx) * x.shape[0] : (idx + 1) * x.shape[0]] = z_t
+            prev_t = t_scalar
+
+        # Last sample is the fully reconstructed image.
+        z_t = self.restore(z_t, 0, start_t=prev_t, eps_original=eps_original)
+        samples[-x.shape[0] :] = z_t
+
+        return samples
