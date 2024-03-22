@@ -143,7 +143,6 @@ class Unet(nn.Module):
         super().__init__()
         self.channels = channels
         self.residual = residual
-        print("Is Time embed used ? ", with_time_emb)
 
         dims = [channels, *map(lambda m: dim * m, dim_mults)]
         in_out = list(zip(dims[:-1], dims[1:]))
