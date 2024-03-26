@@ -11,3 +11,9 @@ dependencies:
   - numpy
   - pandas
   - scipy
+pip:
+  - torch
+  - torchvision
+  - wandb
+  - pytorch-lightning
+  - pytorch-lightning-bolts
