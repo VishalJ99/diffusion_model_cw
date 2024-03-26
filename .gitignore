@@ -13,10 +13,10 @@ runs/
 
 # Files
 *.ipynb
-!fig.ipynb
+!figs.ipynb
 
 # dont track report
 report/*
 !report/main.tex
 !report/main.pdf
-!report/fig/
+!report/figs/

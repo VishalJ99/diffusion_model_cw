@@ -186,7 +186,7 @@ class DDPM(DiffusionModel):
             assert start_t <= self.T
         else:
             start_t = self.T
-        print("restore called with start_t", start_t, "end_t", end_t)
+
         for t in range(start_t, end_t, -1):
             alpha_t = self.alpha_t[t]
             beta_t = self.beta_t[t]
