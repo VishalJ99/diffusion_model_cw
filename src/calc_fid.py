@@ -7,6 +7,7 @@ import torchvision.transforms as transforms
 import torch
 from torchmetrics.image.fid import FrechetInceptionDistance
 from tqdm import tqdm
+from accelerate import Accelerator
 
 
 def main(output_file, weights_file, config, num_samples, bs):
@@ -14,14 +15,15 @@ def main(output_file, weights_file, config, num_samples, bs):
     seed_everything(config["seed"])
     print(f"[INFO] Seed set to: {config['seed']}")
 
-    # Cant use accelerator here as mps is not supported by fid class...
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"[INFO] Device set to: {device}")
+    # Cant use mps for the fid class.
+    fid_device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"[INFO] Fid Device set to: {fid_device}")
+
+    # Use accelerator device for generating samples.
+    accelerator = Accelerator()
 
     # Load dataset.
-    pre_transforms = transforms.Compose(
-        [transforms.ToTensor(), transforms.Normalize((0.5,), (1.0))]
-    )
+    pre_transforms = transforms.Compose([transforms.ToTensor()])
     dataset = MNIST("./data", train=False, download=True, transform=pre_transforms)
     assert num_samples <= len(
         dataset
@@ -41,10 +43,11 @@ def main(output_file, weights_file, config, num_samples, bs):
 
     # Initialise the models.
     decoder = decoder_model_class(**config["decoder_model_params"])
-    model = diffusion_model_class(decoder, beta_t, alpha_t, device).to(device)
+    model = diffusion_model_class(decoder, beta_t, alpha_t, accelerator.device)
 
     # Load the weights.
-    model.load_state_dict(torch.load(weights_file, map_location=device))
+    model.load_state_dict(torch.load(weights_file, map_location=accelerator.device))
+    model = accelerator.prepare(model)
 
     with torch.no_grad():
         fid = FrechetInceptionDistance(normalize=True)
@@ -52,18 +55,18 @@ def main(output_file, weights_file, config, num_samples, bs):
         # which can cause memory issues if all data is passed at once.
         pbar = tqdm(dataloader, desc="Calculating FID score")
         for x, _ in pbar:
-            x = x.to(device)
+            x = x.to(fid_device)
 
             # Generate fake samples.
-            fake_samples = model.uncond_sample(bs, (1, 28, 28), device)
+            fake_samples = model.uncond_sample(bs, (1, 28, 28), accelerator.device)
 
-            # TODO: vectorise this / make it more efficient.
+            # Move to fid device
+            fake_samples = fake_samples.to(fid_device)
+
+            # Fid with normalize = true expects RGB images between 0 and 1.
             for image in fake_samples:
-                # normalise image. Cant use min and max over the entire set of images
-                # min and max for the noisier latents will skew the entire set.
                 image = (image - image.min()) / (image.max() - image.min())
 
-            # Convert input to RGB for inception model.
             fake_samples_rgb = torch.repeat_interleave(fake_samples, 3, 1)
             x_rgb = torch.repeat_interleave(x, 3, 1)
 
