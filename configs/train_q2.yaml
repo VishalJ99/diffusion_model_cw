@@ -1,5 +1,5 @@
 # General Setup.
-output_dir: "./runs/test_const_2"
+output_dir: "./runs/test_fashion_mnist_unet"
 wandb: true
 wandb_project: "diffusion_model_cw"
 seed: 42
@@ -7,7 +7,7 @@ quick_test: false # Runs training with only 1 batch.
 save_image_quality_metrics: true
 
 # Training loop hyper params.
-n_epoch: 10
+n_epoch: 50
 train_batch_size: 128
 val_batch_size: 512
 val_fraction: 0.2
@@ -16,22 +16,29 @@ val_fraction: 0.2
 visualise_ts: [100, 500, 750, 1000] # Time steps to visualise conditional sampling process at during validation.
 num_cond_samples: 4 # number of conditional samples to generate during validation.
 
-# Model Configuration.
-decoder_model: "cnn"
-decoder_model_params:
-  in_channels: 1
-  expected_shape: [28, 28]
-  n_hidden: [16, 32, 32, 16]
-
-diffusion_model: "ddpm"
-diffusion_model_weights: null
-
-# Model hyper parameters.
+# Optimisation hyper parameters.
 lr: 0.0002
 
-# Noise Schedule
-noise_schedule: "linear"
+# Decoder Model Configuration.
+decoder_model: "unet"
+
+# cnn decoder model params.
+# decoder_model_params:
+#   in_channels: 1
+#   expected_shape: [28, 28]
+#   n_hidden: [16, 32, 32, 16]
+
+# UNet decoder model params.
+decoder_model_params:
+    dim: 16
+    dim_mults: [1, 2, 4]
+    channels: 1
+
+# Diffusion model configuration.
+diffusion_model: "fashion_mnist"
+diffusion_model_weights: null
 T: 1000
+noise_schedule: "linear"
 
 # linear noise schedule params.
 custom_noise_schedule_params:
@@ -40,9 +47,9 @@ custom_noise_schedule_params:
 
 # cosine noise schedule params.
 # custom_noise_schedule_params:
-#   beta_max: 0.9 # Should tune properly according to paper... https://arxiv.org/abs/2102.09672
-#   s: 0.00001
+#   beta_max: 0.9
+#   s: 0.008 # Should tune properly according to paper... https://arxiv.org/abs/2102.09672
 
 # constant noise schedule params.
 # custom_noise_schedule_params:
-#   beta: 0.001
+#   beta: 1

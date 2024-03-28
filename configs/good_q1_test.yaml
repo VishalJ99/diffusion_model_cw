@@ -1,5 +1,5 @@
 # General Setup.
-output_dir: "./runs/const_q1_good_run"
+output_dir: "./runs/const_q1_good_run_2"
 seed: 42
 calc_metrics: false
 quick_test: false

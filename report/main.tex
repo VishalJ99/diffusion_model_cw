@@ -15,6 +15,7 @@
 \usepackage{booktabs} % For prettier tables
 \usepackage{siunitx}
 \usepackage{amssymb}
+\usepackage{subcaption}
 
 % Set page margins
 \geometry{a4paper, margin=1in}
@@ -38,7 +39,7 @@
 \maketitle
 
 \tableofcontents
-
+Word count: 2934 (not including appendix)
 \newpage
 \section{Background}
 \subsection{Latent Variable Models}
@@ -65,7 +66,7 @@ $$
 $$
 The network is optimised using a variational bound of the log likelihood of the data, known as the Evidence Lower Bound (ELBO). In order to optimise the network, an encoder is defined which maps the data to the latent space and a decoder which maps the latent space to the data space. The encoder and decoder are trained jointly to maximise the ELBO. The details can be found in chapter 17 of Understanding Deep Learning by Simon Prince \cite{prince}.
 
-Once the network is optimised, ancenstral sampling can be used to generate new samples. This involves sampling a latent variable $\mathbf{z^*}$ from the standard normal distribution and passing it through the decoder network to define the mean of the gaussian likelihood $Pr(\mathbf{x}|\mathbf{z})$. This is then sampled from to generate the new sample $\mathbf{x^*}$.
+Once the network is optimised, ancenstral sampling can be used to generate new samples. This involves sampling a latent variable $\mathbf{z^*}$ from the standard normal distribution and passing it through the decoder network to define the mean of the Gaussian likelihood $Pr(\mathbf{x}|\mathbf{z})$. This is then sampled from to generate the new sample $\mathbf{x^*}$.
 
 \section{Part 1 - Denoising Diffusion Probabilistic Models}
 \subsection{Model Architecture}
@@ -73,7 +74,7 @@ Once the network is optimised, ancenstral sampling can be used to generate new s
 The denoising diffusion probabilistic model (ddpm) is a type of latent variable model where the encoder is predetermined and defines a discrete set of latent variables $\mathbf{z_1} \ldots \mathbf{z_T}$ of the same dimensionality as the data $\mathbf{x}$. The encoder defines a forward degradation process and the decoder describes the reverse denoising process. All the learnt parameters associated with the ddpm model are in the decoder network.
 
 \subsubsection{Encoder}
-The encoder takes as input an image $\mathbf{x}$ and outputs a latent (degraded) representation $\mathbf{z}$ through some degradation process. The implementation of the ddpm encoder in the original notebook degrades the input image $\mathbf{x}$ by gradually adding gaussian noise $\epsilon$ at each step $t$. It follows an update scheme:
+The encoder takes as input an image $\mathbf{x}$ and outputs a latent (degraded) representation $\mathbf{z}$ through some degradation process. The implementation of the ddpm encoder in the original notebook degrades the input image $\mathbf{x}$ by gradually adding Gaussian noise $\epsilon$ at each step $t$. It follows an update scheme:
 \begin{equation}
     \begin{aligned}
         \mathbf{z_1} &= \sqrt{1-\beta_1} \cdot \mathbf{x} + \sqrt{\beta_1} \cdot \boldsymbol{\epsilon_1} \\
@@ -236,13 +237,11 @@ The rapid decay of $\alpha_t$ for the larger $\beta$ value means that most of th
 \section{Part 2 - Custom Degradations}
 \subsection{Prelude - the UNet Decoder}
 % Briefly introduce unet as a more powerful decoder. Introduce why its more powerful, the architecture, the time encoding modification.
-The diffusion models outlined below transition the decoder's structure from a basic CNN architecture to a more powerful U-Net architecture, inspired by the implementation from Bansal et al. in their presentation of cold diffusion models \cite{bansal2022cold}. The original implementation is accessible in the repository at \url{https://github.com/arpitbansal297/Cold-Diffusion-Models}. The implementation used in this report can be found within the \texttt{src/models/decoder\_models.py} script under the \texttt{UNet} class.
-% Check this is really correct.
-The main difference between two implementations involves the modification of layer normalisation application within the U-Net architecture. This adjustment shifts from using an immediate, non-parameterized normalisation after depthwise separable convolutions to incorporating a conditional, parameterized LayerNorm module early in the convolutional sequence. This change has demonstrated to enhance model stability and performance.
-% Detail differences if word count left over.
+The diffusion models outlined below transition the decoder's structure from a basic CNN architecture to a more powerful UNet architecture. Further, the time embedding mechanism is also changed. Now they are generated via the sinusoidal positional embedding method introduced by Vaswani et al in their original paper on the Transformer \cite{vaswani2023attention}. The time embeddings are also added to the feature maps at each layer, rather than just the first as was the case previously.
+The UNet architecture used is adopted from the original implementation by Bansal et al. in their presentation of cold diffusion models \cite{bansal2022cold}. Here, the UNet is implemented using \texttt{torch.nn.Functional.layer\_norm} instead of the custom \texttt{LayerNorm} class in the original. It is also applied after the main convolutional layers of the ConvNext block \cite{liu2022convnet}, before the residual connection is added. This was found to give better performance.
 % Describe the modified decoder net
 \subsection{The Role of Gaussian Noise}
-% Explain the role of noise and what happens when eps is not gaussian or even random var.
+% Explain the role of noise and what happens when eps is not Gaussian or even random var.
 Before discussing diffusion models with custom degradations, understanding the role of Gaussian noise in the foundational theory of diffusion probabilistic models (DDPMs) is crucial. In the original framework, noise $\boldsymbol{\epsilon}$ is drawn from a standard normal distribution which means the latent variable $\mathbf{z_t}$ is also a random variable that follows a normal distribution. Specifically, the distributions of the random variables are defined as:
 $$
 q(\mathbf{z_t}|\mathbf{z_{t-1}}) = \mathcal{N}(\sqrt{1-\beta_t}\mathbf{z_{t-1}}, \beta_t \mathbf{I}).
@@ -251,7 +250,7 @@ Or using the direct update rule in \ref{eq:z_t_alpha_gauss_noise}:
 $$
 q(\mathbf{z_t}|\mathbf{x}) = \mathcal{N}(\sqrt{\alpha_t}\mathbf{x}, \alpha_t\mathbf{I}).
 $$
-Because these distributions have the form of a normal distributions, it can be shown that the conditional distribution $q(\mathbf{z_{t-1}}|\mathbf{z_t}, \mathbf{x})$ is also normal and the reverse distributions $Pr(\mathbf{z_{t-1}}|\mathbf{z_t})$ can be well approximated by normal distributions in the limit of a small noise schedules and a large number of steps. This is a key assumption in the derivation of the loss function in \ref{eq:loss_function}. For the full derivation of see chapter 18 of Prince \cite{prince}. If the noise $\boldsymbol{\epsilon}$ is not sampled from a normal distribution, the reverse distributions $Pr(\mathbf{z_{t-1}}|\mathbf{z_t})$ will not be normal or even a distribution at all in the case of deterministic degradations. This means the loss function will no longer have any probabilistic grounding to be linked with maximising the likelihood of the data, therefore it is not obvious that such a model would be trainable, let alone generate high quality samples. This is the context behind the following experiments.
+Because these distributions have the form of a normal distribution, it can be shown that the conditional distribution $q(\mathbf{z_{t-1}}|\mathbf{z_t}, \mathbf{x})$ is also normal and the reverse distributions $Pr(\mathbf{z_{t-1}}|\mathbf{z_t})$ can be well approximated by normal distributions in the limit of a small $\beta_t$ and large $T$. This is a key assumption in the derivation of the loss function in \ref{eq:loss_function}. For the full derivation see chapter 18 of Prince \cite{prince}. If the noise $\boldsymbol{\epsilon}$ is not sampled from a normal distribution, the reverse distributions $Pr(\mathbf{z_{t-1}}|\mathbf{z_t})$ will not be normal or even a distribution at all in the case of deterministic degradations. This means the loss function will no longer have any probabilistic grounding to be linked with maximising the likelihood of the data, therefore it is not obvious that such a model would be trainable, let alone generate high quality samples. This is the context behind the following experiment.
 
 \subsection{Gaussian Blur Custom Degradation}
 To explore a degradation which contrasts with the Gaussian noise used in the original DDPM, a Gaussian blur degradation is introduced. This is a deterministic
@@ -259,20 +258,18 @@ degradation where the degradation operator is defined as:
 \begin{equation}
     \mathbf{z_t} = G_t * \mathbf{z_{t-1}} = G_t * \dots * G_1 * \mathbf{x} = \tilde{G}_t * \mathbf{x}
 \end{equation}
-where $G_t$ is a Gaussian blur kernel of variance $\sigma_t^2 = \beta_t$ and $\tilde{G}_t$ is the convolution of all the kernels up to time $t$.
+where $G_t$ is a Gaussian blur kernel of variance $\sigma_t^2 = \beta_t$ and $\tilde{G}_t$ is the convolution of all the kernels up to time $t$. The sampling algorithm defined in algorithm \ref{alg:sampling} is replaced with the one introduced by Bansal et al in cold diffusion \cite{bansal2022cold}.
 
-The sampling algorithm defined in algorithm \ref{alg:sampling} is replaced with the one introduced by Bansal et al in cold diffusion \cite{bansal2022cold}. Code can be found in the \texttt{src/models/diffusion\_models.py} script under the \texttt{ColdDiffusionModel} and \texttt{GaussianBlurDM} classes.
+In general, there are only 3 known conditions a custom degradation must satisfy to be used to train a diffusion model.
+First, the degradation must be a smooth function of $t$. Second, the degradation must return the original image when $t=0$. Lastly, the latent $\mathbf{z_T}$ must be unique for each input. Gaussian blurs clearly satisfy the first 2 conditions. The 3rd condition translates to the statement that the mean of the input image is a unique identifier of that image, which is not necessarily true as two images can share the same mean, however in practice, given enough precision in the mean calculation and a large enough dimensionality of $\mathbf{x}$, this is a reasonable assumption.
 
-In general, there are only 3 primary conditions a custom degradation must satisfy to be considered for use in training a diffusion model.
-First, the degradation must be a smooth function of $t$. Second, the degradation must return the original image when $t=0$. Lastly, the latent $z_T$ must be unique for each input. Gaussian blur clearly satisfies the first 2 conditions. The 3rd condition is translates to the statement that the mean of the input image is a unique identifier of that image, which is not necessarily true as two images can share means values however in practice, given enough precision in the mean calculation, this is a reasonable assumption.
-
-% D for gaussian blur. Details of the degradation, how it is implemented
+% D for Gaussian blur. Details of the degradation, how it is implemented
 \subsection{Training details}
-The model was trained on the MNIST dataset for 50 epochs with a batch size of 128. The training and validation data were split using an 80:20 ratio. The model was optimised using the ADAM optimiser with a learning rate of $2 \times 10^{-4}$. The model was trained with a constant noise schedule of $\beta = 1$ and $T=100$. A kernel of size 11x11 was used for the Gaussian blur degradation. The model was trained using the MSE between the output of the decoder and the original image $x$. The model was trained with the U-Net decoder architecture described in the previous section.
+The model was trained on the MNIST dataset for 50 epochs with a batch size of 128. The training and validation datasets were obtained by using an 80:20 split. The model was optimised using ADAM with a learning rate of $2 \times 10^{-4}$. The model was trained with a constant noise schedule of $\beta = 1$ and $T=100$. A kernel of size 11x11 was used for the Gaussian blur degradation. The loss used was the MSE between the output of the decoder and the original image $x$. The decoder model used was the UNet. The UNet was initialised with 32 channels in the first layer with 2 downsampling layers which each double the number of channels of the previous layer.
 
-To generate samples in an unconditional manner, $z_T$ is defined as a uniform image, with its intensity sampled from the normal distribution fit to the mean intensities of the MNIST training set post-100 blurs application. It was found that in order to obtain a diverse set of unconditional samples, a small amount of noise was required to be added to the latent variable $z_T$ before passing it through the decoder. The motivation for this is discussed by Bansal et Al in their cold diffusion paper \cite{bansal2022cold}.
-\subsection{Training Process}
-As before, the training and validation loss curves as presented along with conditional and unconditionally generated samples at epochs 3, 5, 15 and 45. The conditional samples are shown in figure \ref{fig:q2b_conditional_samples} and the unconditionally generated samples are shown in figure
+To generate samples unconditionally, $\mathbf{z_T}$ is initialised as a uniform image, with intensity values sampled from a normal distribution that was fit to the mean intensities of the MNIST training set after 100 blurs. It was found that to obtain a diverse set of samples, a small amount of noise was required to be added to the latent variable $\mathbf{z_T}$. The motivation for this is discussed by Bansal et Al in their cold diffusion paper \cite{bansal2022cold}.
+\subsection{Training Analysis}
+As before, the training and validation loss curves as presented along with conditional and unconditionally generated samples at epochs 3, 5, 15 and 45. The conditional samples are shown in figure \ref{fig:q2b_conditional_samples} and the unconditional in figure
 \ref{fig:q2b_unconditional_samples}.
 
 % figure showing train and val loss curve
@@ -284,16 +281,7 @@ As before, the training and validation loss curves as presented along with condi
 \end{figure}
 
 
-From figure \ref{fig:q2b_loss} it is clear that the model is training well. The training and validation loss curves are close together and indicate the model is not overfitting. The conditional samples in figure \ref{fig:q2b_conditional_samples} show that the model is able to generate high quality samples. Both forms of sampling show that the the fidelity improves over the epochs with the final epochs featuring very little background noise. The unconditionally generated samples however  in figure \ref{fig:q2b_unconditional_samples} show that while model is able to slightly improve the fidelity of the samples, the diversity does not improve nor do they become more number like. This is interesting because the conditional sampling results shows that the model is capable of generating MNIST-esque samples. This shows the issue lies in the way in which the latent space of $\mathbf{z_T}$ is sampled
-This is explored in the next section.
-
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.6\textwidth]{figs/q2b_blur_cond_samples_norm.png}
-    \caption{Conditionally generated samples as a function of epoch for the model with Gaussian blur degradation. The y axis shows the degraded latent variable $z_t$ at 3 times and the reconstructions denoted by $x_t$ at the same times along with the initial image $x$ (first row) and the final reconstructions $\hat{x}$ (last row).}
-    \label{fig:q2b_conditional_samples}
-\end{figure}
+From figure \ref{fig:q2b_loss} it is clear that the model is training well. The training and validation loss curves are close together and indicate the model is not overfitting. The conditional samples in figure \ref{fig:q2b_conditional_samples} show that the model is able to generate high quality samples. Both forms of sampling show that the fidelity improves over the epochs with the final epochs featuring very little background noise. The unconditionally generated samples however  in figure \ref{fig:q2b_unconditional_samples} show that while model is able to slightly improve the fidelity of the samples, the diversity does not improve nor do they become more number like. This is interesting because the conditional sampling results shows that the model is capable of generating MNIST-esque samples. This shows the issue lies in the way in which the latent space of $\mathbf{z_T}$ is sampled.
 
 \begin{figure}[H]
     \centering
@@ -302,8 +290,16 @@ This is explored in the next section.
     \label{fig:q2b_unconditional_samples}
 \end{figure}
 
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{figs/q2b_blur_cond_samples_norm.png}
+    \caption{Conditionally generated samples as a function of epoch for the model with Gaussian blur degradation. The y axis shows the degraded latent variable $z_t$ at 3 times and the reconstructions denoted by $x_t$ at the same times along with the initial image $x$ (first row) and the final reconstructions $\hat{x}$ (last row).}
+    \label{fig:q2b_conditional_samples}
+\end{figure}
+
+
 \section{Comparison of Models}
-For a fair comparison, the original DDPM model with gaussian noise degradation is retrained using the same decoder. The model is trained with a cosine noise schedule with $\beta_{max} = 0.02$, $\beta_{min} = 0.008$ as this was found to by Nichol et al to be the best performing noise schedule for this style of model \cite{nichol2021improved}. Conditional and unconditionally generated samples are shown in figure \ref{fig:q2c_ddpm_samples_cond} and \ref{fig:q2c_ddpm_samples_uncond} respectively. The model is then evaluated using the same metrics as before and the results are summarised in table \ref{tab:q2c_model_comparison}.
+For a fair comparison, the original DDPM model with Gaussian noise degradation is retrained using the same decoder and other hyperparameters. The model is now trained with a cosine noise schedule as this was found to by Nichol et al to be the best performing noise schedule for this style of model \cite{nichol2021improved}. Conditional and unconditionally generated samples from the two models are compared in figure \ref{fig:q2c_conditional_samples} and \ref{fig:q2c_unconditional_samples} respectively. The model is then evaluated using the previously introduced image quality metrics on 1000 cases from the MNIST test set, the results are summarised in table \ref{tab:q2c_model_comparison}.
 \begin{table}[h]
     \centering
     \begin{tabular}{lccccc}
@@ -314,54 +310,56 @@ For a fair comparison, the original DDPM model with gaussian noise degradation i
     DDPM Gaussian Noise & 0.0271 & 0.3592 & 0.0804 & 9.0724 & \textbf{172.6256} \\
     \hline
     \end{tabular}
-    \caption{Performance Comparison of Gaussian Blur Diffusion Model vs DDPM Gaussian Noise Model}
+    \caption{Performance Comparison of Gaussian Blur Diffusion Model vs DDPM Gaussian Noise Model. Bold indicates the best performing model for each metric.}
     \label{tab:q2c_model_comparison}
 \end{table}
 
+All metrics except the FID score show that the Gaussian blur model outperforms the DDPM model. The FID score for the Gaussian blur model is artificially inflated due to the fact they were calculating using samples that were generated unconditionally which are not of high quality. This was done to reduce the computational cost of calculating the score. This discrepancy can clearly be seen in fig \ref{fig:q2c_unconditional_samples}. The Gaussian noise model is able to generate a more diverse set of samples unconditionally compared to the Gaussian blur model.
 \begin{figure}[ht]
     \centering
-    \begin{minipage}{.4\textwidth}
+    \begin{subfigure}{.4\textwidth}
         \centering
         \includegraphics[width=0.9\linewidth]{figs/q2c_ddpm_cond_samples_norm_8.png}
         \caption{Gaussian noise model.}
         \label{fig:cond_ddpm}
-    \end{minipage}
-    \begin{minipage}{.4\textwidth}
+    \end{subfigure}%
+    \hfill
+    \begin{subfigure}{.4\textwidth}
         \centering
         \includegraphics[width=0.9\linewidth]{figs/q2c_blur_cond_samples_norm_8.png}
         \caption{Gaussian blur model.}
         \label{fig:cond_blur}
-    \end{minipage}
+    \end{subfigure}
     \caption{Conditionally generated samples comparison.}
     \label{fig:q2c_conditional_samples}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \begin{minipage}{.4\textwidth}
+    \begin{subfigure}{.4\textwidth}
         \centering
         \includegraphics[width=0.9\linewidth]{figs/q2c_blur_uncond_samples_64.png}
         \caption{Gaussian blur model.}
         \label{fig:uncond_blur}
-    \end{minipage}
-    \begin{minipage}{.4\textwidth}
+    \end{subfigure}%
+    \hfill
+    \begin{subfigure}{.4\textwidth}
         \centering
         \includegraphics[width=0.9\linewidth]{figs/q2c_ddpm_uncond_samples_64.png}
         \caption{Gaussian noise model.}
         \label{fig:uncond_ddpm}
-    \end{minipage}
+    \end{subfigure}
     \caption{Unconditionally generated samples comparison.}
     \label{fig:q2c_unconditional_samples}
 \end{figure}
-
+The quality of the conditionally generated samples shown in figure \ref{fig:q2c_conditional_samples} are quite good for both models. It is interesting to note that in 7/8 cases, the Gaussian blur models conditional reconstructions were of the same class of digit as the original. This is not the case for the Gaussian noise model which is able to reconstruct a digit with high fidelity but in most cases, a digit that belongs to a different class. Further investigation is needed to see if this result holds when blurring for more time steps.
 \section{Future work}
-Future work could include training an MNIST classifier and checking the accuracy of the conditionally generated samples on the classifier. This would provide another important metric of the quality of the samples generated by the model which might be more reliable than the FID score. Further, the model could be trained on more complex datasets such as CIFAR-10 or CelebA to see how it performs on more complex data. The model could also be trained with more exotic degradations such as a motion blur or a combination of degradations to see how the model performs in these cases. Further, different models for the latent space of the blurrier model could be explored to improve the models unconditional generation capabilities.
+Future work would include trying to build different representations for the latent space of the Gaussian blur model to improve it's unconditional generation capabilities. The Gaussian blur model could also be run for a larger number of steps to see if the latent space then becomes better described by the uniform image. This would also help test if the conditionally generated samples are able to as easily reconstruct the original image.
 
 \bibliographystyle{plain}
 \bibliography{ref.bib}
+
+\section{Appendix}
+\subsection{CoPilot and ChatGPT usage}
+GitHub CoPilot was used heavily to to generate the code in \texttt{src/figs.ipynb}. It was also used to create the docstrings for the functions and classes in this repository. CoPilot was also used to help define and format the figures and tables in this report. ChatGPT was used to help define the functions \texttt{normalise\_batch}, \texttt{generate\_gradient\_image\_gray\_angle} and \texttt{generate\_batch\_gradient\_images} in the \texttt{src/utils.py} script, however these functions were not used in the final script and have been commented out.
 \end{document}
-
-
-#NOTES ABOUT PART 2
-
-Degradatrion must be smooth, without fixing eps model gave trash.

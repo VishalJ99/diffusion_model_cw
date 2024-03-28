@@ -1,0 +1,11 @@
+# General Setup.
+output_dir: "./runs/blur_unet_32"
+train_config_path: ./runs/blur_unet_32/train_config.yaml
+model_weights: ./runs/blur_unet_32/model_weights/best_model.pth
+
+seed: 42
+calc_metrics: true
+quick_test: false
+metric_sample_size: 1000 # if set this is the dataset size used for metrics calculation.
+
+batch_size: 128
