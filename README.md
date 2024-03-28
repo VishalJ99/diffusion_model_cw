@@ -17,7 +17,7 @@ conda env create -f environment.yml
 
 conda activate m2_cw_env
 
-docker build -t m2_cw .
+docker build -t m2_docker .
 ```
 ## Usage
 All jobs will create a folder in the `runs` directory with the job name and a timestamp. The folder will contain the following:
