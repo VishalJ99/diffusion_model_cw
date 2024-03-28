@@ -16,6 +16,8 @@ cd vj279
 conda env create -f environment.yml
 
 conda activate m2_cw_env
+
+docker build -t m2_cw .
 ```
 ## Usage
 All jobs will create a folder in the `runs` directory with the job name and a timestamp. The folder will contain the following:
@@ -33,24 +35,46 @@ job_name/
 └── train_config.yaml
 ```
 
-### Local Usage
-(Preferred if using macOS with apple silicon)
+To run any of the following commands via docker use:
 
-Ensure environment is activated
+Docker:
+
+```
+docker run -it -v $(pwd):/m2_cw m2_docker /bin/bash -c "source activate m2_cw_env && {command}"
+```
+
+Eg. to run q1 good train job, which would be locally run as:
+
+```
+python src/train.py configs/q1_good_train_config.yaml
+```
+This can be run in docker as:
+
+```
+docker run -it -v $(pwd):/m2_cw m2_docker /bin/bash -c "source activate m2_cw_env && python src/train.py configs/q1_good_train_config.yaml"
+```
 
 ### Training
 
-NOTE: These jobs will take a long time to run, especially on a CPU. It is recommended to run these jobs on a GPU or with MPS atleast. To speed up training, you can reduce the number of epochs in the config files or run with quick_train set to True.
+NOTE: These jobs will take a long time to run, especially on a CPU. It is recommended to run these jobs on a device with a CUDA GPU or with MPS atleast. If running in such an environment, docker commands are not advised as they will not be able to access the GPU currently.
+
+To speed up training, you can reduce the number of epochs in the config files or run with quick_train set to True. If docker commands are run, just be aware on the cpu generating the conditional and unconditional sample plots at the end of every epoch can take 5-10 minutes.
+
+Ensure environment is activated if running on a local machine.
 
 
+
+#### Commands
 q1 good train job:
 ```
 python src/train.py configs/q1_good_train_config.yaml
 ```
+
 q1 bad train job:
 ```
 python src/train.py configs/q1_bad_train_config.yaml
 ```
+
 
 q2 ddpm unet train job:
 ```
@@ -64,18 +88,22 @@ python src/train.py configs/q2_gauss_blur_train_config.yaml
 ```
 NOTE: The conditional sample plots will look different from the ones presented in the report as by default the plots are made with normalise=True, this option is not configurable from the config currently and should be changed in train.py if needed.
 
-Change line 116 in train.py from:
+Change line 116 in `src/train.py` from:
 
-`plt = make_cond_samples_plot(z_t, visualise_ts, num_cond_samples)`
+```
+plt = make_cond_samples_plot(z_t, visualise_ts, num_cond_samples)
+```
 
 to:
 
-`plt = make_cond_samples_plot(z_t, visualise_ts, num_cond_samples, normalise=False, standardise=True)`
+```
+plt = make_cond_samples_plot(z_t, visualise_ts, num_cond_samples, normalise=False, standardise=True)
+```
 
 
 
 ### Testing
-Can take about 5-10 minutes per job, since it needs to generate 1000 samples conditionally to compute the image quality metrics. Can turn this off by setting `calc_metrics` to False or decreasing the `metric_sample_size` in the config file.
+Takes about 5-10 minutes a job on an M1 Macbook Pro, since it needs to generate 1000 samples conditionally to compute the image quality metrics. Can turn this off by setting `calc_metrics` to False or decreasing the `metric_sample_size` in the config file.
 
 These will write loss and metrics to the csv file in the job folder.
 

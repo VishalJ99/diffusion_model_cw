@@ -9,7 +9,7 @@ docs/
 contents/
 data/
 wandb/
-runs/
+*runs/
 
 # Files
 *.ipynb

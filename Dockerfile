@@ -5,7 +5,7 @@ RUN apt-get install -y build-essential python3-dev
 
 COPY src /m2_cw/src
 COPY configs /m2_cw/configs
-COPY environment.yml /mphil_medical_imaging_cw
+COPY environment.yml /m2_cw/environment.yml
 
 WORKDIR /m2_cw
 
