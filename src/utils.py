@@ -126,7 +126,12 @@ def fetch_noise_schedule(schedule_key: str) -> Callable:
 
 
 def make_cond_samples_plot(
-    z_t: torch.tensor, visualise_ts: List[int], nrows: int, fs: int = 12
+    z_t: torch.tensor,
+    visualise_ts: List[int],
+    nrows: int,
+    fs: int = 12,
+    normalise: bool = True,
+    standardise: bool = False,
 ) -> plt:
     """
     Makes a nicely formatted conditional sampling plot for the diffusion model.
@@ -153,11 +158,19 @@ def make_cond_samples_plot(
     plt
         The matplotlib plot object.
     """
+    if normalise:
+        # Normalise every image in the batch.
+        for idx, img in enumerate(z_t):
+            img = winsorize_tensor(img, 1, 99)
+            z_t[idx] = (img - img.min()) / (img.max() - img.min())
 
-    # Normalise every image in the batch.
-    for idx, img in enumerate(z_t):
-        img = winsorize_tensor(img, 1, 99)
-        z_t[idx] = (img - img.min()) / (img.max() - img.min())
+    if standardise:
+        # TODO: Implement this properly.
+        # Avoid hardcoding the mean and std.
+        # Standardise every image in the batch.
+        for idx, img in enumerate(z_t):
+            img = img + 0.5
+            z_t[idx] = img
 
     # Make a grid of the images.
     grid = make_grid(z_t, nrow=nrows)
@@ -294,14 +307,6 @@ def calc_image_quality_metrics(
     return metrics
 
 
-# Test this! Chat GPT code!
-# def normalise_batch(batch):
-#     # Assumes batch is of shape [N, C, H, W]
-#     min_vals = torch.min(batch.view(batch.size(0), -1), dim=1)[0].view(-1, 1, 1, 1)
-#     max_vals = torch.max(batch.view(batch.size(0), -1), dim=1)[0].view(-1, 1, 1, 1)
-#     return (batch - min_vals) / (max_vals - min_vals)
-
-
 def winsorize_tensor(
     tensor: torch.tensor, lower_percentile: int, upper_percentile: int
 ) -> torch.tensor:
@@ -338,3 +343,45 @@ def winsorize_tensor(
     )
 
     return winsorized_tensor
+
+
+# Test this! Chat GPT code!
+# def normalise_batch(batch):
+#     # Assumes batch is of shape [N, C, H, W]
+#     min_vals = torch.min(batch.view(batch.size(0), -1), dim=1)[0].view(-1, 1, 1, 1)
+#     max_vals = torch.max(batch.view(batch.size(0), -1), dim=1)[0].view(-1, 1, 1, 1)
+#     return (batch - min_vals) / (max_vals - min_vals)
+
+# Experimental functions created for the purposes of making a more accurate latent
+# space to sample latents from for gaussian blur diffiusion model.
+
+# Modified ChatGPT code.
+# def generate_gradient_image_gray_angle(width, height, angle):
+#     angle_rad = np.deg2rad(angle)
+#     dx = np.cos(angle_rad)
+#     dy = np.sin(angle_rad)
+
+#     x = np.linspace(-dx, dx, width)
+#     y = np.linspace(-dy, dy, height)
+#     xv, yv = np.meshgrid(x, y)
+
+#     gradient = xv * dx + yv * dy
+#     gradient -= gradient.min()
+#     gradient /= gradient.max()
+
+#     gradient_image = gradient.reshape(1, height, width)  # Shape (C, H, W) with C=1
+#     gradient_image = np.clip(gradient_image, 0, 1)
+
+#     return gradient_image
+
+# Modified ChatGPT code.
+# def generate_batch_gradient_images(batch_size, width, height):
+#     batch_images = []
+
+#     for _ in range(batch_size):
+#         angle = np.random.randint(0, 360)
+#         gradient_image = generate_gradient_image_gray_angle(width, height, angle)
+#         batch_images.append(torch.tensor(gradient_image, dtype=torch.float32))
+
+#     batch_images_tensor = torch.stack(batch_images, dim=0)
+#     return batch_images_tensor

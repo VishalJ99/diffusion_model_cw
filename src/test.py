@@ -4,7 +4,7 @@ from utils import (
     seed_everything,
     fetch_model,
     fetch_noise_schedule,
-    calc_image_quality_metrics
+    calc_image_quality_metrics,
 )
 import torch
 import sys
@@ -31,11 +31,6 @@ def main(config):
     if os.path.isfile(test_losses_csv_path):
         print(f"Test loss file already exists in {output_dir}... Exiting.")
         sys.exit(1)
-    else:
-        with open(test_losses_csv_path, mode="w", newline="") as file:
-            writer = csv.writer(file)
-            # Write the header row
-            writer.writerow(["id_", "loss"])
 
     if config["calc_metrics"]:
         metric_csv_path = os.path.join(output_dir, "test_metrics.csv")
@@ -83,10 +78,7 @@ def main(config):
         test_set = Subset(test_set, np.arange(0, 100))
 
     # Initialise the dataloader.
-    # Want to return individual losses for each image so batch size is 1.
-    test_loader = DataLoader(
-        test_set, 1, shuffle=False
-    )
+    test_loader = DataLoader(test_set, config["batch_size"], shuffle=False)
 
     # Fetch the models and noise schedule.
     decoder_model_class = fetch_model(config["decoder_model"])
@@ -104,15 +96,12 @@ def main(config):
     model = diffusion_model_class(decoder, beta_t, alpha_t, device)
 
     # Load the model weights.
-    model_weights_fpath = config["diffusion_model_weights"]
+    model_weights_fpath = config["model_weights"]
     model.load_state_dict(torch.load(model_weights_fpath))
     optim = torch.optim.Adam(model.parameters(), lr=2e-4)
 
-    model, optim, test_loader = accelerator.prepare(
-        model, optim, test_loader
-    )
+    model, optim, test_loader = accelerator.prepare(model, optim, test_loader)
 
-    losses_to_write = []
     total_test_loss = 0
     with torch.no_grad():
         # Training loop.
@@ -121,23 +110,14 @@ def main(config):
 
         for idx, (x, _) in test_pbar:
             loss = model(x)
-            if idx == 3966:
-                print(f"Loss for image 3966: {loss.item()}")
-                import matplotlib.pyplot as plt
-                plt.imshow(x.squeeze().detach().cpu().numpy(), cmap="gray")
-                plt.show()
-                
             test_pbar.set_description(f"loss: {loss.item():.3g}")
             total_test_loss += loss.item()
-            losses_to_write.append([idx, loss.item()])
+
         avg_test_loss = total_test_loss / len(test_loader)
         print(f"[INFO] Average test loss: {avg_test_loss:.3g}")
-        # Write test losses to the csv file.
-        with open(test_losses_csv_path, mode="a", newline="") as file:
+        with open(test_losses_csv_path, mode="w", newline="") as file:
             writer = csv.writer(file)
-            # Write the header row
-            writer.writerows(losses_to_write)
-
+            writer.writerow([avg_test_loss])
     if config["calc_metrics"]:
         total_rmse = 0
         total_ssim = 0
@@ -149,9 +129,7 @@ def main(config):
             test_set = Subset(test_set, np.arange(0, config["metric_sample_size"]))
 
         # Batch size fixed as too large a batch size can cause memory issues.
-        test_loader = DataLoader(
-            test_set, 512, shuffle=False
-        )
+        test_loader = DataLoader(test_set, 512, shuffle=False)
 
         test_loader = accelerator.prepare(test_loader)
         pbar = tqdm(enumerate(test_loader), total=len(test_loader))
@@ -161,8 +139,8 @@ def main(config):
                 # cond_sample returns x since its typically used to generate plots.
                 # Want the last batch size number of elements along the first axis.
                 # to get the reconstructed x_hat.
-                x_hat = x_hat[-x.shape[0]:]
-                
+                x_hat = x_hat[-x.shape[0] :]
+
                 # These are averages across the batch.
                 rmse, ssim, psnr = calc_image_quality_metrics(x, x_hat)
                 total_rmse += rmse
@@ -191,4 +169,17 @@ if __name__ == "__main__":
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
 
+    with open(config["train_config_path"], "r") as f:
+        training_config = yaml.safe_load(f)
+
+    # Add the relevant keys from the training config to the test config.
+    # Prevents duplicate entries in the test config.
+    config["decoder_model"] = training_config["decoder_model"]
+    config["decoder_model_params"] = training_config["decoder_model_params"]
+    config["diffusion_model"] = training_config["diffusion_model"]
+    config["noise_schedule"] = training_config["noise_schedule"]
+    config["T"] = training_config["T"]
+    config["custom_noise_schedule_params"] = training_config[
+        "custom_noise_schedule_params"
+    ]
     main(config)

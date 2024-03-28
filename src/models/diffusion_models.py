@@ -240,13 +240,18 @@ class GaussianBlurDM(ColdDiffusionModel):
 
     def uncond_sample(self, n_sample: int, size, device) -> torch.Tensor:
         # Generate n_samples random floats between -0.4 and -0.3 (typical vals
-        # of a heavily blurred mnist sample)
-        c = 0.1 * torch.rand(n_sample, device=device) - 0.4
+        # of a heavily blurred mnist sample).
+        c = 0.05 * torch.randn(n_sample, device=device) - 0.36
 
         # Create uniform tensors from each float and stack them along the batch axis.
         uniform_ts = [torch.full(size, value.item(), device=device) for value in c]
         z_t = torch.stack(uniform_ts, dim=0)
 
+        # Add some jitter to the samples for better diversity.
+        eps = 0.002 * torch.randn_like(z_t)
+        z_t = z_t + eps
+
+        # Restore the samples.
         samples = self.restore(z_t, 0)
 
         return samples
