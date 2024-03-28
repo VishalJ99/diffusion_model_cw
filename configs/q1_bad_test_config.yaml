@@ -1,0 +1,9 @@
+output_dir: "./runs/q1_bad"
+train_config_path: ./runs/q1_bad/train_config.yaml
+model_weights: ./runs/q1_bad/model_weights/best_model.pth
+
+seed: 42
+calc_metrics: true
+quick_test: false
+metric_sample_size: 1000 # if set this is the dataset size used for metrics calculation.
+batch_size: 128 # Batch size of test loader.

@@ -119,12 +119,16 @@ def main(config):
             writer = csv.writer(file)
             writer.writerow([avg_test_loss])
     if config["calc_metrics"]:
+        print("[INFO] Calculating image quality metrics...")
         total_rmse = 0
         total_ssim = 0
         total_psnr = 0
 
         if not config["quick_test"] and config["metric_sample_size"]:
-            # Use a subset of the test set for quick testing.
+            # Calculate metrics on a subset of the test set.
+            assert (
+                config["metric_sample_size"] <= len(test_set)
+            ), "Metric sample size must be less than or equal to the test set size."
             # Not needed if quick test already set.
             test_set = Subset(test_set, np.arange(0, config["metric_sample_size"]))
 
@@ -150,7 +154,9 @@ def main(config):
             avg_rmse = total_rmse / len(test_loader)
             avg_ssim = total_ssim / len(test_loader)
             avg_psnr = total_psnr / len(test_loader)
-
+        print(f"[INFO] Average RMSE: {avg_rmse:.3g}")
+        print(f"[INFO] Average SSIM: {avg_ssim:.3g}")
+        print(f"[INFO] Average PSNR: {avg_psnr:.3g}")
         row = [avg_test_loss, avg_rmse, avg_ssim, avg_psnr]
         with open(metric_csv_path, mode="a", newline="") as file:
             writer = csv.writer(file)

@@ -1,7 +1,8 @@
-name: m2_cw
+name: m2_cw_env
 channels:
   - defaults
 dependencies:
+  - python=3.11
   - pre-commit
   - matplotlib
   - flake8
@@ -11,9 +12,16 @@ dependencies:
   - numpy
   - pandas
   - scipy
-pip:
-  - torch
-  - torchvision
-  - wandb
-  - pytorch-lightning
-  - pytorch-lightning-bolts
+  - pip
+  - tqdm
+  - pip:
+      - torch
+      - torchvision
+      - torchmetrics
+      - accelerate
+      - wandb
+      - pytorch-lightning
+      - pytorch-lightning-bolts
+      - piq
+      - einops
+      - torch-fidelity

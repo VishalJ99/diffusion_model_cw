@@ -299,7 +299,7 @@ From figure \ref{fig:q2b_loss} it is clear that the model is training well. The 
 
 
 \section{Comparison of Models}
-For a fair comparison, the original DDPM model with Gaussian noise degradation is retrained using the same decoder and other hyperparameters. The model is now trained with a cosine noise schedule as this was found to by Nichol et al to be the best performing noise schedule for this style of model \cite{nichol2021improved}. Conditional and unconditionally generated samples from the two models are compared in figure \ref{fig:q2c_conditional_samples} and \ref{fig:q2c_unconditional_samples} respectively. The model is then evaluated using the previously introduced image quality metrics on 1000 cases from the MNIST test set, the results are summarised in table \ref{tab:q2c_model_comparison}.
+For a fair comparison, the original DDPM model with Gaussian noise degradation is retrained using the same decoder and other hyperparameters with $T=1000$. The model is now trained with a cosine noise schedule as this was found to by Nichol et al to be the best performing noise schedule for this style of model \cite{nichol2021improved}. Conditional and unconditionally generated samples from the two models are compared in figure \ref{fig:q2c_conditional_samples} and \ref{fig:q2c_unconditional_samples} respectively. The model is then evaluated using the previously introduced image quality metrics on 1000 cases from the MNIST test set, the results are summarised in table \ref{tab:q2c_model_comparison}.
 \begin{table}[h]
     \centering
     \begin{tabular}{lccccc}

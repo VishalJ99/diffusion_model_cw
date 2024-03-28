@@ -161,7 +161,8 @@ def main(config):
             loss = model(x)
             accelerator.backward(loss)
             optim.step()
-            wandb.log({"train_loss": loss.item()})
+            if config["wandb"]:
+                wandb.log({"train_loss": loss.item()})
             total_train_loss += loss.item()
 
             # Show running average of last 100 loss values in progress bar.
@@ -181,7 +182,8 @@ def main(config):
             val_pbar = tqdm(val_loader)
             for x, _ in val_pbar:
                 loss = model(x)
-                wandb.log({"val_loss": loss.item()})
+                if config["wandb"]:
+                    wandb.log({"val_loss": loss.item()})
                 total_val_loss += loss.item()
 
             average_val_loss = total_val_loss / len(val_loader)
