@@ -58,12 +58,26 @@ python src/train.py configs/q2_ddpm_train_config.yaml
 ```
 
 q2 gaussian blur train job:
+
 ```
 python src/train.py configs/q2_gauss_blur_train_config.yaml
 ```
+NOTE: The conditional sample plots will look different from the ones presented in the report as by default the plots are made with normalise=True, this option is not configurable from the config currently and should be changed in train.py if needed.
+
+Change line 116 in train.py from:
+
+`plt = make_cond_samples_plot(z_t, visualise_ts, num_cond_samples)`
+
+to:
+
+`plt = make_cond_samples_plot(z_t, visualise_ts, num_cond_samples, normalise=False, standardise=True)`
+
+
 
 ### Testing
 Can take about 5-10 minutes per job, since it needs to generate 1000 samples conditionally to compute the image quality metrics. Can turn this off by setting `calc_metrics` to False or decreasing the `metric_sample_size` in the config file.
+
+These will write loss and metrics to the csv file in the job folder.
 
 q1 good test job:
 ```

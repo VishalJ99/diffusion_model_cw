@@ -34,7 +34,7 @@ decoder_model_params:
     channels: 1
 
 # Diffusion model configuration.
-diffusion_model: "ddpm"
+diffusion_model: "gaussian_blur"
 diffusion_model_weights: null
 T: 100
 noise_schedule: "const"
