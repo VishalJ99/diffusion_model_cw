@@ -3,7 +3,7 @@ output_dir: "./runs/q2_gauss_blur_unet"
 wandb: false
 wandb_project: "diffusion_model_cw"
 seed: 42
-quick_test: true # Runs training with only 1 batch.
+quick_test: false # Runs training with only 1 batch.
 
 # Training loop hyper params.
 n_epoch: 50
@@ -36,7 +36,7 @@ decoder_model_params:
 # Diffusion model configuration.
 diffusion_model: "ddpm"
 diffusion_model_weights: null
-T: 1000
+T: 100
 noise_schedule: "const"
 
 # linear noise schedule params.

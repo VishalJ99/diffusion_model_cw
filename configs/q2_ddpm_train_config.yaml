@@ -3,7 +3,7 @@ output_dir: "./runs/q2_ddpm_unet"
 wandb: false
 wandb_project: "diffusion_model_cw"
 seed: 42
-quick_test: true # Runs training with only 1 batch.
+quick_test: false # Runs training with only 1 batch.
 
 # Training loop hyper params.
 n_epoch: 50
