@@ -12,7 +12,7 @@ val_batch_size: 512
 val_fraction: 0.2
 
 # sampling configuration.
-visualise_ts: [10, 50, 75, 100] # Time steps to visualise conditional sampling process at during validation.
+visualise_ts: [100, 500, 750, 1000] # Time steps to visualise conditional sampling process at during validation.
 num_cond_samples: 4 # number of samples to generate for conditional and uncondtional plots.
 
 # Optimisation hyper parameters.
