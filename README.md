@@ -9,7 +9,7 @@ with custom degradations.
 ## Installation
 Set up
 ```
-git@github.com:VishalJ99/diffusion_model_cw.git
+git clone git@github.com:VishalJ99/diffusion_model_cw.git
 
 cd diffusion_model_cw
 
