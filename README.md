@@ -9,9 +9,9 @@ with custom degradations.
 ## Installation
 Set up
 ```
-git clone git@gitlab.developers.cam.ac.uk:phy/data-intensive-science-mphil/M2_Assessment/vj279.git
+git@github.com:VishalJ99/diffusion_model_cw.git
 
-cd vj279
+cd diffusion_model_cw
 
 conda env create -f environment.yml
 
